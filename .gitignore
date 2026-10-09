@@ -25,3 +25,6 @@ rustc-ice-*.txt
 
 # superpowers plan workspaces (scratch)
 .superpowers/
+
+# controller-managed task worktrees
+.worktrees/
