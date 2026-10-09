@@ -180,4 +180,15 @@ fn the_case_and_its_exports_stay_out_of_evidence_roots() {
     attach(&mut case, &ev, opts("x")).unwrap();
     assert!(matches!(vem_case::export::check_output_path(&case, &ev.join("projects/out.jsonl")), Err(CaseError::InsideEvidence { .. })));
     assert!(vem_case::export::check_output_path(&case, &tmp.path().join("out.jsonl")).is_ok());
+    // A dangling symlink outside the root that points into it is refused too (NB-2).
+    #[cfg(unix)]
+    {
+        let link = tmp.path().join("link.jsonl");
+        std::os::unix::fs::symlink(ev.join("projects/planted.jsonl"), &link).unwrap();
+        assert!(matches!(vem_case::export::check_output_path(&case, &link), Err(CaseError::InsideEvidence { .. })));
+        let rel = tmp.path().join("rel.jsonl");
+        std::os::unix::fs::symlink("ev/projects/planted.jsonl", &rel).unwrap();
+        assert!(matches!(vem_case::export::check_output_path(&case, &rel), Err(CaseError::InsideEvidence { .. })));
+        assert!(!ev.join("projects/planted.jsonl").exists());
+    }
 }
