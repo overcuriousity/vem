@@ -123,7 +123,7 @@ Store         id, root_id, harness {ClaudeCode|Codex|Cursor|CursorIde}, kind (st
               discovery_method, status {Parsed|Inventoried|Failed}
 SourceFile    id, store_id, rel_path, size, sha256, mtime, ctime, atime?, retained_blob?,
               parse_status, record_count, anomaly_count, ingested_at, version
-Session       id, store_id, harness_session_id, kind {Primary|Subagent|Resumed|Forked},
+Session       id, store_id, harness_session_id, kind {Primary|Subagent|Resumed|Forked|SidecarOnly},
               parent_session_id?, title?, project_path?, git_branch?, harness_version?,
               models (list), first_ts, first_ts_origin, last_ts, last_ts_origin,
               message_count, tool_call_count, primary_source_file_id
@@ -147,7 +147,7 @@ Anomaly       id, root_id, store_id?, source_file_id?, session_id?, kind {Trunca
               MalformedRecord|UnknownRecordType|UnknownStoreGeneration|MissingTimestamp|
               OrphanedFile|SupersededFile|ArchivedSession|UnlinkedSubagent|
               FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord|UnpairedToolResult|
-              MissingTranscript},
+              MissingTranscript|SuspiciousPath|NonUtf8Path|SymlinkInEvidence|InvalidUtf8},
               severity {Info|Warning|Error}, byte_offset?, message, details (JSON)
 Provenance    id, source_file_id, byte_offset, byte_length, record_index,
               content_sha256, parser_name, parser_version, origin {Stored|Derived|Inferred}
@@ -160,7 +160,12 @@ AuditLog      id, case_id, ts, action, target, details (JSON)   -- append-only
 
 `UnpairedToolResult`: a tool result whose tool use is not in the same file. `MissingTranscript`:
 a sidecar (e.g. Claude Code `history.jsonl`) references a session for which no transcript exists,
-which is evidence of deletion.
+which is evidence of deletion. `SuspiciousPath`: a path taken from evidence data (e.g. a file-history
+`backupFileName`) would leave its directory or follow a symbolic link, so it is not read.
+`NonUtf8Path`: a file name is not valid UTF-8 and is stored percent-encoded. `SymlinkInEvidence`: a
+symbolic link in the root is recorded in the manifest and never followed. `InvalidUtf8`: a record
+contains invalid UTF-8 and was decoded lossily. `SidecarOnly`: a session known only from a sidecar
+(e.g. `history.jsonl` prompts) whose transcript is gone.
 
 **Timestamp origin** (`ts_origin`) on every timestamp-bearing row:
 `Stored` (the record carries a UTC timestamp), `StoredLocalClock` (carried but known to
