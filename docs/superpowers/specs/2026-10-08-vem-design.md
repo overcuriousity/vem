@@ -47,14 +47,15 @@ The first prototype covers three harnesses: **Claude Code**, **Codex CLI**, and
 
 ## 2. Architecture
 
-Cargo workspace with four crates and one frontend package.
+Cargo workspace with five crates and one frontend package.
 
 | Unit | Responsibility | Depends on |
 |---|---|---|
 | `vem-core` | Canonical model types, provenance and anomaly types, timestamp origin, tolerant JSONL reader, SHA-256 helpers, adapter traits (`Discover`, `Parse`). | std, serde, sha2 |
 | `vem-adapters` | One module per harness (`claude_code`, `codex`, `cursor`), sub-modules per store generation. Pure: files in, canonical records + anomalies out. No database knowledge. | `vem-core`, rusqlite (read-only, immutable), a schemaless protobuf wire decoder |
 | `vem-case` | Case directory and SQLite database, migrations, ingest pipeline, blob retention, FTS5 index, observation derivation, exports (Timesketch JSONL/CSV, Vestigo Parquet), audit log. | `vem-core`, `vem-adapters`, rusqlite, arrow/parquet |
-| `vem` | Binary. CLI subcommands and the Axum HTTP server with the embedded frontend. | `vem-case`, axum, rust-embed |
+| `vem-web` | Axum HTTP server: JSON API, loopback guards, embedded frontend (see `2026-10-09-vem-web-ui-design.md`). | `vem-case`, axum, rust-embed |
+| `vem` | Binary. CLI subcommands; `serve` calls `vem-web`. | `vem-case`, `vem-web` |
 | `frontend/` | React 19 + TypeScript + Vite single-page app, built to static files embedded into the binary. | — |
 
 Data flow: `evidence root → discovery → manifest (hash) → retain copy → adapter parse
@@ -149,7 +150,8 @@ Anomaly       id, root_id, store_id?, source_file_id?, session_id?, kind {Trunca
               MalformedRecord|UnknownRecordType|UnknownStoreGeneration|MissingTimestamp|
               OrphanedFile|SupersededFile|ArchivedSession|UnlinkedSubagent|
               FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord|UnpairedToolResult|
-              MissingTranscript|SuspiciousPath|NonUtf8Path|SymlinkInEvidence|InvalidUtf8},
+              MissingTranscript|SuspiciousPath|NonUtf8Path|SymlinkInEvidence|InvalidUtf8|
+              UnreadableFile},
               severity {Info|Warning|Error}, byte_offset?, message, details (JSON),
               provenance_id?
 Provenance    id, source_file_id, byte_offset, byte_length, record_index,
@@ -167,7 +169,8 @@ which is evidence of deletion. `SuspiciousPath`: a path taken from evidence data
 `backupFileName`) would leave its directory or follow a symbolic link, so it is not read.
 `NonUtf8Path`: a file name is not valid UTF-8 and is stored percent-encoded. `SymlinkInEvidence`: a
 symbolic link in the root is recorded in the manifest and never followed. `InvalidUtf8`: a record
-contains invalid UTF-8 and was decoded lossily. `SidecarOnly`: a session known only from a sidecar
+contains invalid UTF-8 and was decoded lossily. `UnreadableFile`: a file in the root could not be opened,
+copied or hashed during attach; it is listed, attach continues. `SidecarOnly`: a session known only from a sidecar
 (e.g. `history.jsonl` prompts) whose transcript is gone.
 
 `SourceFile.rel_path_encoded`: the `rel_path` holds percent-encoded bytes of a non-UTF-8 name, so
