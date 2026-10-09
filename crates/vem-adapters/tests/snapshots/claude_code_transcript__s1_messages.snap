@@ -1,0 +1,774 @@
+---
+source: crates/vem-adapters/tests/claude_code_transcript.rs
+expression: sink.messages
+---
+[
+  [
+    1,
+    1,
+    {
+      "harness_record_type": "ai-title",
+      "harness_uuid": null,
+      "parent_uuid": null,
+      "role": "meta",
+      "timestamp": {
+        "value": null,
+        "origin": "absent"
+      },
+      "model": null,
+      "attributes": {
+        "type": "ai-title",
+        "aiTitle": "Add notes file",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001"
+      },
+      "blocks": [],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 0,
+        "byte_length": 97,
+        "record_index": 0,
+        "content_sha256": "05c650f9677476b6ec80db59cf33d64778b5a475b9d060383c9cf664d6e96ddb",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    2,
+    {
+      "harness_record_type": "last-prompt",
+      "harness_uuid": null,
+      "parent_uuid": null,
+      "role": "meta",
+      "timestamp": {
+        "value": null,
+        "origin": "absent"
+      },
+      "model": null,
+      "attributes": {
+        "type": "last-prompt",
+        "leafUuid": "a5a5a5a5-0000-4000-8000-000000000005",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001"
+      },
+      "blocks": [],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 98,
+        "byte_length": 123,
+        "record_index": 1,
+        "content_sha256": "e3559680e0c0633ce8821eaabcec55dc6f57c62135b0ed842d5d3871651acce4",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    3,
+    {
+      "harness_record_type": "user",
+      "harness_uuid": "u1u1u1u1-0000-4000-8000-000000000001",
+      "parent_uuid": null,
+      "role": "user",
+      "timestamp": {
+        "value": "2026-09-30T10:00:00.000Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "parentUuid": null,
+        "isSidechain": false,
+        "promptId": "p1",
+        "type": "user",
+        "uuid": "u1u1u1u1-0000-4000-8000-000000000001",
+        "timestamp": "2026-09-30T10:00:00.000Z",
+        "permissionMode": "default",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "text",
+          "text": "Create a notes file and list the repo",
+          "payload": null,
+          "tool_use_id": null
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 222,
+        "byte_length": 413,
+        "record_index": 2,
+        "content_sha256": "e8705309921b4d654a9cd9ccec00babf43b43e15c4401fba27bc0933935eb3c8",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    4,
+    {
+      "harness_record_type": "assistant",
+      "harness_uuid": "a1a1a1a1-0000-4000-8000-000000000001",
+      "parent_uuid": "u1u1u1u1-0000-4000-8000-000000000001",
+      "role": "assistant",
+      "timestamp": {
+        "value": "2026-09-30T10:00:01.000Z",
+        "origin": "stored"
+      },
+      "model": "claude-fable-5-1",
+      "attributes": {
+        "parentUuid": "u1u1u1u1-0000-4000-8000-000000000001",
+        "isSidechain": false,
+        "requestId": "req_1",
+        "type": "assistant",
+        "uuid": "a1a1a1a1-0000-4000-8000-000000000001",
+        "timestamp": "2026-09-30T10:00:01.000Z",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "thinking",
+          "text": "List first.",
+          "payload": {
+            "type": "thinking",
+            "thinking": "List first.",
+            "signature": "sig"
+          },
+          "tool_use_id": null
+        },
+        {
+          "kind": "tool_use",
+          "text": null,
+          "payload": {
+            "type": "tool_use",
+            "id": "toolu_bash1",
+            "name": "Bash",
+            "input": {
+              "command": "ls -la",
+              "description": "List repo"
+            }
+          },
+          "tool_use_id": "toolu_bash1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 636,
+        "byte_length": 649,
+        "record_index": 3,
+        "content_sha256": "7b53037c0ea660c4e681b93330666495b323ffe03481d00900bad76d344999f4",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    5,
+    {
+      "harness_record_type": "user",
+      "harness_uuid": "u2u2u2u2-0000-4000-8000-000000000002",
+      "parent_uuid": "a1a1a1a1-0000-4000-8000-000000000001",
+      "role": "tool",
+      "timestamp": {
+        "value": "2026-09-30T10:00:02.000Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "parentUuid": "a1a1a1a1-0000-4000-8000-000000000001",
+        "isSidechain": false,
+        "promptId": "p1",
+        "type": "user",
+        "uuid": "u2u2u2u2-0000-4000-8000-000000000002",
+        "timestamp": "2026-09-30T10:00:02.000Z",
+        "sourceToolAssistantUUID": "a1a1a1a1-0000-4000-8000-000000000001",
+        "session_id": "0f0f0f0f-0000-4000-8000-000000000001",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_result",
+          "text": "README.md\nsrc\n",
+          "payload": {
+            "tool_use_id": "toolu_bash1",
+            "type": "tool_result",
+            "content": "README.md\nsrc\n",
+            "is_error": false
+          },
+          "tool_use_id": "toolu_bash1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 1286,
+        "byte_length": 690,
+        "record_index": 4,
+        "content_sha256": "ccb0d2b66335d99e926476be7b045d3bdc10503b3c74fe6c4e5b3390644b3fcd",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    6,
+    {
+      "harness_record_type": "assistant",
+      "harness_uuid": "a2a2a2a2-0000-4000-8000-000000000002",
+      "parent_uuid": "u2u2u2u2-0000-4000-8000-000000000002",
+      "role": "assistant",
+      "timestamp": {
+        "value": "2026-09-30T10:00:03.000Z",
+        "origin": "stored"
+      },
+      "model": "claude-fable-5-1",
+      "attributes": {
+        "parentUuid": "u2u2u2u2-0000-4000-8000-000000000002",
+        "isSidechain": false,
+        "requestId": "req_2",
+        "type": "assistant",
+        "uuid": "a2a2a2a2-0000-4000-8000-000000000002",
+        "timestamp": "2026-09-30T10:00:03.000Z",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_use",
+          "text": null,
+          "payload": {
+            "type": "tool_use",
+            "id": "toolu_write1",
+            "name": "Write",
+            "input": {
+              "file_path": "/home/alice/proj/notes.md",
+              "content": "# Notes\n"
+            }
+          },
+          "tool_use_id": "toolu_write1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 1977,
+        "byte_length": 605,
+        "record_index": 5,
+        "content_sha256": "484da5905c6456e8f6e2955e971081041a930e734b0b30c0184abf2d82b0602a",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    7,
+    {
+      "harness_record_type": "user",
+      "harness_uuid": "u3u3u3u3-0000-4000-8000-000000000003",
+      "parent_uuid": "a2a2a2a2-0000-4000-8000-000000000002",
+      "role": "tool",
+      "timestamp": {
+        "value": "2026-09-30T10:00:04.000Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "parentUuid": "a2a2a2a2-0000-4000-8000-000000000002",
+        "isSidechain": false,
+        "promptId": "p1",
+        "type": "user",
+        "uuid": "u3u3u3u3-0000-4000-8000-000000000003",
+        "timestamp": "2026-09-30T10:00:04.000Z",
+        "sourceToolAssistantUUID": "a2a2a2a2-0000-4000-8000-000000000002",
+        "session_id": "0f0f0f0f-0000-4000-8000-000000000001",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_result",
+          "text": "File created successfully at: /home/alice/proj/notes.md",
+          "payload": {
+            "tool_use_id": "toolu_write1",
+            "type": "tool_result",
+            "content": "File created successfully at: /home/alice/proj/notes.md"
+          },
+          "tool_use_id": "toolu_write1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 2583,
+        "byte_length": 776,
+        "record_index": 6,
+        "content_sha256": "454bf8f3da4b56afe5ce97198aee208c1eb057b5fb770335b3d385062b3ca2c9",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    8,
+    {
+      "harness_record_type": "file-history-snapshot",
+      "harness_uuid": null,
+      "parent_uuid": null,
+      "role": "meta",
+      "timestamp": {
+        "value": null,
+        "origin": "absent"
+      },
+      "model": null,
+      "attributes": {
+        "type": "file-history-snapshot",
+        "messageId": "u3u3u3u3-0000-4000-8000-000000000003",
+        "snapshot": {
+          "messageId": "u3u3u3u3-0000-4000-8000-000000000003",
+          "trackedFileBackups": {
+            "notes.md": {
+              "backupFileName": "deadbeef00000001@v1",
+              "version": 1,
+              "backupTime": "2026-09-30T10:00:04.500Z",
+              "realParentDir": "/home/alice/proj"
+            }
+          },
+          "timestamp": "2026-09-30T10:00:04.500Z"
+        },
+        "isSnapshotUpdate": false
+      },
+      "blocks": [],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 3360,
+        "byte_length": 373,
+        "record_index": 7,
+        "content_sha256": "8226094f997e2e49558cb1bbf139d37bd324d27717d85aceaeb855cd2c747fb8",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    9,
+    {
+      "harness_record_type": "file-history-delta",
+      "harness_uuid": null,
+      "parent_uuid": null,
+      "role": "meta",
+      "timestamp": {
+        "value": "2026-09-30T10:00:04.500Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "type": "file-history-delta",
+        "messageId": "u3u3u3u3-0000-4000-8000-000000000003",
+        "snapshotMessageId": "u3u3u3u3-0000-4000-8000-000000000003",
+        "trackingPath": "notes.md",
+        "backup": {
+          "backupFileName": "deadbeef00000001@v1",
+          "version": 1,
+          "backupTime": "2026-09-30T10:00:04.500Z",
+          "realParentDir": "/home/alice/proj"
+        },
+        "timestamp": "2026-09-30T10:00:04.500Z"
+      },
+      "blocks": [],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 3734,
+        "byte_length": 341,
+        "record_index": 8,
+        "content_sha256": "331c9f067d5581f41bfabc4b25b36ef0b4e45d60d3e3f13f8b2f8471fb660573",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    10,
+    {
+      "harness_record_type": "assistant",
+      "harness_uuid": "a3a3a3a3-0000-4000-8000-000000000003",
+      "parent_uuid": "u3u3u3u3-0000-4000-8000-000000000003",
+      "role": "assistant",
+      "timestamp": {
+        "value": "2026-09-30T10:00:05.000Z",
+        "origin": "stored"
+      },
+      "model": "claude-fable-5-1",
+      "attributes": {
+        "parentUuid": "u3u3u3u3-0000-4000-8000-000000000003",
+        "isSidechain": false,
+        "requestId": "req_3",
+        "type": "assistant",
+        "uuid": "a3a3a3a3-0000-4000-8000-000000000003",
+        "timestamp": "2026-09-30T10:00:05.000Z",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_use",
+          "text": null,
+          "payload": {
+            "type": "tool_use",
+            "id": "toolu_edit1",
+            "name": "Edit",
+            "input": {
+              "file_path": "/home/alice/proj/notes.md",
+              "old_string": "# Notes\n",
+              "new_string": "# Notes\n\n- first\n"
+            }
+          },
+          "tool_use_id": "toolu_edit1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 4076,
+        "byte_length": 642,
+        "record_index": 9,
+        "content_sha256": "0bd6ff6e3970954d3cbcfb90d772dd0c024f937c6933e62b842009287a848304",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    11,
+    {
+      "harness_record_type": "user",
+      "harness_uuid": "u4u4u4u4-0000-4000-8000-000000000004",
+      "parent_uuid": "a3a3a3a3-0000-4000-8000-000000000003",
+      "role": "tool",
+      "timestamp": {
+        "value": "2026-09-30T10:00:06.000Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "parentUuid": "a3a3a3a3-0000-4000-8000-000000000003",
+        "isSidechain": false,
+        "promptId": "p1",
+        "type": "user",
+        "uuid": "u4u4u4u4-0000-4000-8000-000000000004",
+        "timestamp": "2026-09-30T10:00:06.000Z",
+        "sourceToolAssistantUUID": "a3a3a3a3-0000-4000-8000-000000000003",
+        "session_id": "0f0f0f0f-0000-4000-8000-000000000000",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_result",
+          "text": "The file /home/alice/proj/notes.md has been updated successfully.",
+          "payload": {
+            "tool_use_id": "toolu_edit1",
+            "type": "tool_result",
+            "content": "The file /home/alice/proj/notes.md has been updated successfully."
+          },
+          "tool_use_id": "toolu_edit1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 4719,
+        "byte_length": 921,
+        "record_index": 10,
+        "content_sha256": "3e2ac7dfcef73147f627666eec5dfbe7011144500c45e08c4c6afc93b8d5ec59",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    12,
+    {
+      "harness_record_type": "assistant",
+      "harness_uuid": "a4a4a4a4-0000-4000-8000-000000000004",
+      "parent_uuid": "u4u4u4u4-0000-4000-8000-000000000004",
+      "role": "assistant",
+      "timestamp": {
+        "value": "2026-09-30T10:00:07.000Z",
+        "origin": "stored"
+      },
+      "model": "claude-fable-5-1",
+      "attributes": {
+        "parentUuid": "u4u4u4u4-0000-4000-8000-000000000004",
+        "isSidechain": false,
+        "requestId": "req_4",
+        "type": "assistant",
+        "uuid": "a4a4a4a4-0000-4000-8000-000000000004",
+        "timestamp": "2026-09-30T10:00:07.000Z",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_use",
+          "text": null,
+          "payload": {
+            "type": "tool_use",
+            "id": "toolu_agent1",
+            "name": "Agent",
+            "input": {
+              "subagent_type": "Explore",
+              "description": "Find config files",
+              "prompt": "Find all config files in the repo"
+            }
+          },
+          "tool_use_id": "toolu_agent1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 5641,
+        "byte_length": 648,
+        "record_index": 11,
+        "content_sha256": "75339a62497633d3515fadef0be99d7703786b39d9c033ea4490bbfc57829bcf",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    13,
+    {
+      "harness_record_type": "user",
+      "harness_uuid": "u5u5u5u5-0000-4000-8000-000000000005",
+      "parent_uuid": "a4a4a4a4-0000-4000-8000-000000000004",
+      "role": "tool",
+      "timestamp": {
+        "value": "2026-09-30T10:00:09.000Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "parentUuid": "a4a4a4a4-0000-4000-8000-000000000004",
+        "isSidechain": false,
+        "promptId": "p1",
+        "type": "user",
+        "uuid": "u5u5u5u5-0000-4000-8000-000000000005",
+        "timestamp": "2026-09-30T10:00:09.000Z",
+        "sourceToolAssistantUUID": "a4a4a4a4-0000-4000-8000-000000000004",
+        "session_id": "0f0f0f0f-0000-4000-8000-000000000001",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "tool_result",
+          "text": "Found settings.json",
+          "payload": {
+            "tool_use_id": "toolu_agent1",
+            "type": "tool_result",
+            "content": [
+              {
+                "type": "text",
+                "text": "Found settings.json"
+              }
+            ]
+          },
+          "tool_use_id": "toolu_agent1"
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 6290,
+        "byte_length": 733,
+        "record_index": 12,
+        "content_sha256": "be26f8478ecd200d044a2b8114ca59cd400c39808855ea7324fecf5bfae753a2",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    14,
+    {
+      "harness_record_type": "assistant",
+      "harness_uuid": "a5a5a5a5-0000-4000-8000-000000000005",
+      "parent_uuid": "u5u5u5u5-0000-4000-8000-000000000005",
+      "role": "assistant",
+      "timestamp": {
+        "value": "2026-09-30T10:00:10.000Z",
+        "origin": "stored"
+      },
+      "model": "claude-fable-5-1",
+      "attributes": {
+        "parentUuid": "u5u5u5u5-0000-4000-8000-000000000005",
+        "isSidechain": false,
+        "requestId": "req_5",
+        "type": "assistant",
+        "uuid": "a5a5a5a5-0000-4000-8000-000000000005",
+        "timestamp": "2026-09-30T10:00:10.000Z",
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [
+        {
+          "kind": "text",
+          "text": "Done. Created notes.md and added a first item.",
+          "payload": {
+            "type": "text",
+            "text": "Done. Created notes.md and added a first item."
+          },
+          "tool_use_id": null
+        }
+      ],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 7024,
+        "byte_length": 550,
+        "record_index": 13,
+        "content_sha256": "dc6c46fa42137479ab8b17aa35563c249b7e2079b2d769cb7fa2db551981108e",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    15,
+    {
+      "harness_record_type": "system",
+      "harness_uuid": "s1s1s1s1-0000-4000-8000-000000000001",
+      "parent_uuid": "a5a5a5a5-0000-4000-8000-000000000005",
+      "role": "system",
+      "timestamp": {
+        "value": "2026-09-30T10:00:10.100Z",
+        "origin": "stored"
+      },
+      "model": null,
+      "attributes": {
+        "parentUuid": "a5a5a5a5-0000-4000-8000-000000000005",
+        "isSidechain": false,
+        "type": "system",
+        "subtype": "turn_duration",
+        "durationMs": 10000,
+        "messageCount": 10,
+        "timestamp": "2026-09-30T10:00:10.100Z",
+        "uuid": "s1s1s1s1-0000-4000-8000-000000000001",
+        "isMeta": false,
+        "userType": "external",
+        "entrypoint": "cli",
+        "cwd": "/home/alice/proj",
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001",
+        "version": "2.1.294",
+        "gitBranch": "main"
+      },
+      "blocks": [],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 7575,
+        "byte_length": 408,
+        "record_index": 14,
+        "content_sha256": "dc2bb2afb0012b8ed606c7c653393592ff13f48f5abba421dd514506f0546db4",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ],
+  [
+    1,
+    16,
+    {
+      "harness_record_type": "zz-future-record",
+      "harness_uuid": null,
+      "parent_uuid": null,
+      "role": "meta",
+      "timestamp": {
+        "value": null,
+        "origin": "absent"
+      },
+      "model": null,
+      "attributes": {
+        "type": "zz-future-record",
+        "payload": {
+          "x": 1
+        },
+        "sessionId": "0f0f0f0f-0000-4000-8000-000000000001"
+      },
+      "blocks": [],
+      "provenance": {
+        "source_file": 1,
+        "byte_offset": 7984,
+        "byte_length": 96,
+        "record_index": 15,
+        "content_sha256": "9b29d683f373a42e637bc9cf5bab95b3655c50a6fb01cda9afcde03561aa91a4",
+        "parser_name": "claude_code.transcript",
+        "parser_version": "1",
+        "origin": "stored"
+      }
+    }
+  ]
+]

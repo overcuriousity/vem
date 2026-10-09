@@ -121,9 +121,11 @@ Store         id, root_id, harness {ClaudeCode|Codex|Cursor|CursorIde}, kind (st
               cursor:agent-transcripts, cursor:state-vscdb, cursor:chat-store,
               cursor:ai-tracking, cursor:local-history), generation, path,
               discovery_method, status {Parsed|Inventoried|Failed}
-SourceFile    id, store_id, rel_path, size, sha256, mtime, ctime, atime?, retained_blob?,
-              parse_status, record_count, anomaly_count, ingested_at, version
-Session       id, store_id, harness_session_id, kind {Primary|Subagent|Resumed|Forked},
+SourceFile    id, store_id, rel_path, rel_path_encoded, kind {File|Symlink}, link_target?,
+              size, sha256, mtime, ctime, btime?, atime?, retained_blob?,
+              parse_status {Unparsed|Parsed|Inventoried|Failed|Superseded}, record_count,
+              anomaly_count, ingested_at, version
+Session       id, store_id, harness_session_id, kind {Primary|Subagent|Resumed|Forked|SidecarOnly},
               parent_session_id?, title?, project_path?, git_branch?, harness_version?,
               models (list), first_ts, first_ts_origin, last_ts, last_ts_origin,
               message_count, tool_call_count, primary_source_file_id
@@ -146,8 +148,10 @@ IdentityClaim id, session_id, scheme (e.g. cursor:composerId, cursor:store-sessi
 Anomaly       id, root_id, store_id?, source_file_id?, session_id?, kind {TruncatedLine|
               MalformedRecord|UnknownRecordType|UnknownStoreGeneration|MissingTimestamp|
               OrphanedFile|SupersededFile|ArchivedSession|UnlinkedSubagent|
-              FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord},
-              severity {Info|Warning|Error}, byte_offset?, message, details (JSON)
+              FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord|UnpairedToolResult|
+              MissingTranscript|SuspiciousPath|NonUtf8Path|SymlinkInEvidence|InvalidUtf8},
+              severity {Info|Warning|Error}, byte_offset?, message, details (JSON),
+              provenance_id?
 Provenance    id, source_file_id, byte_offset, byte_length, record_index,
               content_sha256, parser_name, parser_version, origin {Stored|Derived|Inferred}
 ContentBlob   sha256 (pk), size, bytes (content-addressed; retained files, snapshots,
@@ -156,6 +160,24 @@ Annotation    id, case_id, target_type, target_id, kind {Tag|Bookmark|Note}, val
               created_at
 AuditLog      id, case_id, ts, action, target, details (JSON)   -- append-only
 ```
+
+`UnpairedToolResult`: a tool result whose tool use is not in the same file. `MissingTranscript`:
+a sidecar (e.g. Claude Code `history.jsonl`) references a session for which no transcript exists,
+which is evidence of deletion. `SuspiciousPath`: a path taken from evidence data (e.g. a file-history
+`backupFileName`) would leave its directory or follow a symbolic link, so it is not read.
+`NonUtf8Path`: a file name is not valid UTF-8 and is stored percent-encoded. `SymlinkInEvidence`: a
+symbolic link in the root is recorded in the manifest and never followed. `InvalidUtf8`: a record
+contains invalid UTF-8 and was decoded lossily. `SidecarOnly`: a session known only from a sidecar
+(e.g. `history.jsonl` prompts) whose transcript is gone.
+
+`SourceFile.rel_path_encoded`: the `rel_path` holds percent-encoded bytes of a non-UTF-8 name, so
+the stored path decodes losslessly. `SourceFile.kind`: `File` for a regular file, `Symlink` for a
+link recorded but never followed. `SourceFile.link_target`: a symbolic link's target as read, never
+resolved. `SourceFile.btime`: the file's birth time when the filesystem reports one. `parse_status`:
+`Unparsed` (not yet ingested), `Parsed` (a parser read it), `Inventoried` (no parser reads it; hashed
+only), `Failed` (the parse failed and left no rows; retried on the next ingest), `Superseded` (a
+later version of a drifted file replaced it). `Anomaly.provenance_id`: the record the anomaly is
+about, when the parser had its bytes.
 
 **Timestamp origin** (`ts_origin`) on every timestamp-bearing row:
 `Stored` (the record carries a UTC timestamp), `StoredLocalClock` (carried but known to
@@ -179,7 +201,11 @@ JSON in `attributes`, plus an `UnknownRecordType` anomaly at `Info` severity.
   `agent-tools/*.txt` sidecars become ContentBlobs referenced by Observations so the
   file-operation views can show before/after diffs.
 - Ingest is idempotent by file hash. Unchanged files are skipped. A changed file is flagged
-  and ingested as a new `SourceFile.version`; earlier rows are kept.
+  and ingested as a new `SourceFile.version`; earlier rows are kept, with `parse_status = Superseded`.
+- Record-level anomalies carry a Provenance row through `Anomaly.provenance_id`, so their raw
+  bytes can be shown and verified like a message's.
+- Tool calls are full-text indexed (`tool_calls_fts` over name, input and result text) alongside
+  the block index, so search finds commands and tool output as well as message text.
 
 ## 6. Adapters
 
