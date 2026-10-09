@@ -1,4 +1,15 @@
 -- vem case database, schema version 1. Mirrors spec §4 and §7.
+--
+-- Added by the fix wave:
+--   source_files.rel_path_encoded  1 when rel_path holds percent-encoded bytes of a non-UTF-8 name.
+--   source_files.kind              'file' or 'symlink' (a link is recorded, never followed).
+--   source_files.link_target       a symbolic link's target as read, never resolved.
+--   source_files.btime             birth time, when the filesystem reports one.
+--   source_files.parse_status      unparsed | parsed | inventoried | failed | superseded
+--                                  (failed files leave no rows and are retried; superseded is an
+--                                  earlier version of a drifted file).
+--   anomalies.provenance_id        the record a record-level anomaly is about.
+--   tool_calls_fts                 full-text index over tool call name, input and result text.
 
 CREATE TABLE case_info (
     id INTEGER PRIMARY KEY CHECK (id = 1),
