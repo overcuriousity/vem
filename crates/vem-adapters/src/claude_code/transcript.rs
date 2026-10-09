@@ -318,7 +318,16 @@ impl<'a> TranscriptState<'a> {
 
     pub fn finish(&mut self, sink: &mut dyn ParseSink) {
         super::tools::flush_unfinished(self, sink);
-        // IDENTITY CLAIMS (Task 8) are emitted here.
+        for sid in std::mem::take(&mut self.session_ids) {
+            let join_status = if sid == self.session_id { JoinStatus::Matched } else { JoinStatus::Unmatched };
+            sink.identity_claim(self.session, IdentityClaimDraft { scheme: "claude:sessionId".to_string(), claimed_id: sid, source_file: self.handle, join_status });
+        }
+        for sid in std::mem::take(&mut self.origin_ids) {
+            if sid == self.session_id {
+                continue;
+            }
+            sink.identity_claim(self.session, IdentityClaimDraft { scheme: "claude:origin_session_id".to_string(), claimed_id: sid, source_file: self.handle, join_status: JoinStatus::Unmatched });
+        }
     }
 }
 
@@ -349,8 +358,17 @@ pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Resu
         origin_ids: BTreeSet::new(),
         pending: HashMap::new(),
     };
-    // FILE FLAGS (Task 8): orphaned / superseded anomalies are emitted here.
-    let _ = &path.flags;
+    let file_name = ctx.rel_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    for flag in &path.flags {
+        let (kind, what) = match *flag {
+            "orphaned" => (AnomalyKind::OrphanedFile, "set aside as orphaned by the harness"),
+            _ => (AnomalyKind::SupersededFile, "set aside as superseded by the harness"),
+        };
+        state.anomaly(sink, kind, Severity::Info, None, format!("transcript {file_name} was {what}; parsed anyway"), json!({ "file_name": file_name }));
+    }
+    if path.is_subagent {
+        read_subagent_meta(&mut state, &ctx.abs_path, sink);
+    }
     let file = File::open(&ctx.abs_path)?;
     let reader = JsonlReader::new(BufReader::new(file));
     for rec in reader {
@@ -381,4 +399,50 @@ pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Resu
     }
     state.finish(sink);
     Ok(())
+}
+
+/// `agent-<id>.meta.json` next to a subagent transcript: title from `description`, claim on `toolUseId`.
+fn read_subagent_meta(state: &mut TranscriptState<'_>, abs_path: &Path, sink: &mut dyn ParseSink) {
+    let meta_path = abs_path.with_extension("meta.json");
+    let Ok(bytes) = std::fs::read(&meta_path) else { return };
+    let Ok(meta) = serde_json::from_slice::<Value>(&bytes) else {
+        state.anomaly(sink, AnomalyKind::MalformedRecord, Severity::Warning, None, format!("subagent meta file {} is not valid JSON", meta_path.display()), json!({}));
+        return;
+    };
+    let title = str_field(&meta, "description");
+    if title.is_some() {
+        sink.update_session(state.session, SessionUpdate { title, ..Default::default() });
+    }
+    if let Some(tool_use_id) = str_field(&meta, "toolUseId") {
+        sink.identity_claim(
+            state.session,
+            IdentityClaimDraft { scheme: "claude:spawning_tool_use_id".to_string(), claimed_id: tool_use_id, source_file: state.handle, join_status: JoinStatus::Unmatched },
+        );
+    }
+    let mut attrs = Map::new();
+    attrs.insert("subagent_meta".to_string(), meta);
+    // The meta file content is kept on the session through a meta message with inferred provenance.
+    sink.message(
+        state.session,
+        MessageDraft {
+            harness_record_type: "subagent-meta".to_string(),
+            harness_uuid: None,
+            parent_uuid: None,
+            role: Role::Meta,
+            timestamp: Timestamp::absent(),
+            model: None,
+            attributes: attrs,
+            blocks: Vec::new(),
+            provenance: Provenance {
+                source_file: state.handle,
+                byte_offset: 0,
+                byte_length: 0,
+                record_index: 0,
+                content_sha256: sha256_hex(&bytes),
+                parser_name: PARSER_NAME.to_string(),
+                parser_version: PARSER_VERSION.to_string(),
+                origin: ProvOrigin::Derived,
+            },
+        },
+    );
 }
