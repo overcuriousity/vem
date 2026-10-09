@@ -19,8 +19,12 @@ fn case_over_copy() -> (tempfile::TempDir, Case, std::path::PathBuf) {
 
 #[test]
 fn clean_case_verifies_without_drift() {
-    let (_tmp, mut case, _ev) = case_over_copy();
+    let (tmp, mut case, ev) = case_over_copy();
+    let before = tree_fingerprint(&ev);
     let r = verify(&mut case).unwrap();
+    let evs = vem_case::export::events(&case, &vem_case::export::Scope::Case).unwrap();
+    vem_case::export::parquet::write_parquet(&evs, &tmp.path().join("out.parquet")).unwrap();
+    assert_eq!(tree_fingerprint(&ev), before, "verify and export leave the evidence untouched");
     assert!(r.files_checked > 0);
     assert!(r.drifted.is_empty() && r.missing.is_empty() && r.blob_errors.is_empty() && r.roots_unavailable.is_empty());
     let n: i64 = case.conn.query_row("SELECT COUNT(*) FROM anomalies WHERE kind = 'hash_drift'", [], |r| r.get(0)).unwrap();
