@@ -107,7 +107,6 @@ pub fn blocks_from_content(content: Option<&Value>) -> Vec<BlockDraft> {
     }
 }
 
-#[allow(dead_code)] // fields are read by Task 7
 pub(crate) struct PendingToolUse {
     pub message: MessageHandle,
     pub ordinal: u32,
@@ -116,7 +115,6 @@ pub(crate) struct PendingToolUse {
     pub started: Timestamp,
 }
 
-#[allow(dead_code)] // root, session_id, pending are read by Tasks 7-9
 pub(crate) struct TranscriptState<'a> {
     pub root: &'a Path,
     pub handle: SourceFileHandle,
@@ -227,7 +225,10 @@ impl<'a> TranscriptState<'a> {
                 }];
                 self.meta_record(&rtype, v, prov, blocks, sink);
             }
-            // FILE HISTORY (Task 9): "file-history-delta" gains an observation here.
+            "file-history-delta" => {
+                self.file_history_delta(&v, &prov, sink);
+                self.meta_record(&rtype, v, prov, Vec::new(), sink);
+            }
             t if KNOWN_META.contains(&t) => self.meta_record(&rtype, v, prov, Vec::new(), sink),
             other => {
                 self.anomaly(
@@ -314,13 +315,69 @@ impl<'a> TranscriptState<'a> {
                 provenance: prov.clone(),
             },
         );
-        // TOOL PAIRING (Task 7): tool_use / tool_result blocks are paired here.
-        let _ = (handle, tool_use_result, timestamp, prov);
+        super::tools::pair_blocks(self, handle, &blocks, tool_use_result.as_ref(), &timestamp, &prov, sink);
+    }
+
+    /// A `file-history-delta` records that the harness backed up `trackingPath` before changing it.
+    /// The backup lives at `file-history/<session>/<backupFileName>`; when present it is the before-content.
+    pub fn file_history_delta(&mut self, v: &Value, prov: &Provenance, sink: &mut dyn ParseSink) {
+        let tracking = str_field(v, "trackingPath");
+        let backup = v.get("backup").cloned().unwrap_or(Value::Null);
+        let backup_name = str_field(&backup, "backupFileName");
+        let real_parent = str_field(&backup, "realParentDir");
+        let path = match (&real_parent, &tracking) {
+            (Some(dir), Some(t)) => {
+                let base = Path::new(t).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| t.clone());
+                Some(format!("{}/{}", dir.trim_end_matches('/'), base))
+            }
+            (None, Some(t)) => Some(t.clone()),
+            _ => None,
+        };
+        let before_blob = backup_name.as_ref().and_then(|name| {
+            let p = self.root.join("file-history").join(&self.session_id).join(name);
+            std::fs::read(p).ok().map(|bytes| sink.blob(&bytes))
+        });
+        let timestamp = v
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .or_else(|| backup.get("backupTime").and_then(Value::as_str))
+            .and_then(Timestamp::stored)
+            .unwrap_or_else(Timestamp::absent);
+        sink.observation(
+            self.session,
+            ObservationDraft {
+                kind: ObservationKind::FileEdited,
+                derived_from: Derivation::Record(prov.clone()),
+                path,
+                command: None,
+                before_blob,
+                after_blob: None,
+                timestamp,
+                confidence: Confidence::Medium,
+                details: json!({
+                    "source": "file-history-delta",
+                    "trackingPath": tracking,
+                    "backupFileName": backup_name,
+                    "version": backup.get("version").cloned().unwrap_or(Value::Null),
+                    "backupTime": backup.get("backupTime").cloned().unwrap_or(Value::Null),
+                    "messageId": str_field(v, "messageId"),
+                }),
+            },
+        );
     }
 
     pub fn finish(&mut self, sink: &mut dyn ParseSink) {
-        // IDENTITY CLAIMS (Task 8) and UNFINISHED TOOL USES (Task 7) are emitted here.
-        let _ = sink;
+        super::tools::flush_unfinished(self, sink);
+        for sid in std::mem::take(&mut self.session_ids) {
+            let join_status = if sid == self.session_id { JoinStatus::Matched } else { JoinStatus::Unmatched };
+            sink.identity_claim(self.session, IdentityClaimDraft { scheme: "claude:sessionId".to_string(), claimed_id: sid, source_file: self.handle, join_status });
+        }
+        for sid in std::mem::take(&mut self.origin_ids) {
+            if sid == self.session_id {
+                continue;
+            }
+            sink.identity_claim(self.session, IdentityClaimDraft { scheme: "claude:origin_session_id".to_string(), claimed_id: sid, source_file: self.handle, join_status: JoinStatus::Unmatched });
+        }
     }
 }
 
@@ -351,8 +408,17 @@ pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Resu
         origin_ids: BTreeSet::new(),
         pending: HashMap::new(),
     };
-    // FILE FLAGS (Task 8): orphaned / superseded anomalies are emitted here.
-    let _ = &path.flags;
+    let file_name = ctx.rel_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    for flag in &path.flags {
+        let (kind, what) = match *flag {
+            "orphaned" => (AnomalyKind::OrphanedFile, "set aside as orphaned by the harness"),
+            _ => (AnomalyKind::SupersededFile, "set aside as superseded by the harness"),
+        };
+        state.anomaly(sink, kind, Severity::Info, None, format!("transcript {file_name} was {what}; parsed anyway"), json!({ "file_name": file_name }));
+    }
+    if path.is_subagent {
+        read_subagent_meta(&mut state, &ctx.abs_path, sink);
+    }
     let file = File::open(&ctx.abs_path)?;
     let reader = JsonlReader::new(BufReader::new(file));
     for rec in reader {
@@ -383,4 +449,50 @@ pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Resu
     }
     state.finish(sink);
     Ok(())
+}
+
+/// `agent-<id>.meta.json` next to a subagent transcript: title from `description`, claim on `toolUseId`.
+fn read_subagent_meta(state: &mut TranscriptState<'_>, abs_path: &Path, sink: &mut dyn ParseSink) {
+    let meta_path = abs_path.with_extension("meta.json");
+    let Ok(bytes) = std::fs::read(&meta_path) else { return };
+    let Ok(meta) = serde_json::from_slice::<Value>(&bytes) else {
+        state.anomaly(sink, AnomalyKind::MalformedRecord, Severity::Warning, None, format!("subagent meta file {} is not valid JSON", meta_path.display()), json!({}));
+        return;
+    };
+    let title = str_field(&meta, "description");
+    if title.is_some() {
+        sink.update_session(state.session, SessionUpdate { title, ..Default::default() });
+    }
+    if let Some(tool_use_id) = str_field(&meta, "toolUseId") {
+        sink.identity_claim(
+            state.session,
+            IdentityClaimDraft { scheme: "claude:spawning_tool_use_id".to_string(), claimed_id: tool_use_id, source_file: state.handle, join_status: JoinStatus::Unmatched },
+        );
+    }
+    let mut attrs = Map::new();
+    attrs.insert("subagent_meta".to_string(), meta);
+    // The meta file content is kept on the session through a meta message with inferred provenance.
+    sink.message(
+        state.session,
+        MessageDraft {
+            harness_record_type: "subagent-meta".to_string(),
+            harness_uuid: None,
+            parent_uuid: None,
+            role: Role::Meta,
+            timestamp: Timestamp::absent(),
+            model: None,
+            attributes: attrs,
+            blocks: Vec::new(),
+            provenance: Provenance {
+                source_file: state.handle,
+                byte_offset: 0,
+                byte_length: 0,
+                record_index: 0,
+                content_sha256: sha256_hex(&bytes),
+                parser_name: PARSER_NAME.to_string(),
+                parser_version: PARSER_VERSION.to_string(),
+                origin: ProvOrigin::Derived,
+            },
+        },
+    );
 }
