@@ -146,7 +146,8 @@ IdentityClaim id, session_id, scheme (e.g. cursor:composerId, cursor:store-sessi
 Anomaly       id, root_id, store_id?, source_file_id?, session_id?, kind {TruncatedLine|
               MalformedRecord|UnknownRecordType|UnknownStoreGeneration|MissingTimestamp|
               OrphanedFile|SupersededFile|ArchivedSession|UnlinkedSubagent|
-              FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord},
+              FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord|UnpairedToolResult|
+              MissingTranscript},
               severity {Info|Warning|Error}, byte_offset?, message, details (JSON)
 Provenance    id, source_file_id, byte_offset, byte_length, record_index,
               content_sha256, parser_name, parser_version, origin {Stored|Derived|Inferred}
@@ -156,6 +157,10 @@ Annotation    id, case_id, target_type, target_id, kind {Tag|Bookmark|Note}, val
               created_at
 AuditLog      id, case_id, ts, action, target, details (JSON)   -- append-only
 ```
+
+`UnpairedToolResult`: a tool result whose tool use is not in the same file. `MissingTranscript`:
+a sidecar (e.g. Claude Code `history.jsonl`) references a session for which no transcript exists,
+which is evidence of deletion.
 
 **Timestamp origin** (`ts_origin`) on every timestamp-bearing row:
 `Stored` (the record carries a UTC timestamp), `StoredLocalClock` (carried but known to
