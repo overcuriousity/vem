@@ -107,7 +107,6 @@ pub fn blocks_from_content(content: Option<&Value>) -> Vec<BlockDraft> {
     }
 }
 
-#[allow(dead_code)] // fields are read by Task 7
 pub(crate) struct PendingToolUse {
     pub message: MessageHandle,
     pub ordinal: u32,
@@ -314,13 +313,12 @@ impl<'a> TranscriptState<'a> {
                 provenance: prov.clone(),
             },
         );
-        // TOOL PAIRING (Task 7): tool_use / tool_result blocks are paired here.
-        let _ = (handle, tool_use_result, timestamp, prov);
+        super::tools::pair_blocks(self, handle, &blocks, tool_use_result.as_ref(), &timestamp, &prov, sink);
     }
 
     pub fn finish(&mut self, sink: &mut dyn ParseSink) {
-        // IDENTITY CLAIMS (Task 8) and UNFINISHED TOOL USES (Task 7) are emitted here.
-        let _ = sink;
+        super::tools::flush_unfinished(self, sink);
+        // IDENTITY CLAIMS (Task 8) are emitted here.
     }
 }
 
