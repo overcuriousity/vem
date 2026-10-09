@@ -1,0 +1,1 @@
+//! Sidecar store parsers.
