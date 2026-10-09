@@ -181,7 +181,12 @@ pub fn export(case_dir: &Path, format: ExportFormat, root: Option<i64>, session:
         (Some(r), None) => Scope::Root(r),
         (None, None) => Scope::Case,
     };
+    vem_case::export::check_scope(&case, &scope)?;
+    vem_case::export::check_output_path(&case, output)?;
     let ev = events(&case, &scope)?;
+    if ev.is_empty() {
+        return Err(CaseError::Export("nothing to export in this scope".to_string()));
+    }
     let format_name = match format {
         ExportFormat::TimesketchJsonl => {
             let f = std::fs::File::create(output)?;
@@ -194,7 +199,7 @@ pub fn export(case_dir: &Path, format: ExportFormat, root: Option<i64>, session:
             "timesketch-csv"
         }
         ExportFormat::VestigoParquet => {
-            vem_case::export::parquet::write_parquet(&case, &ev, output)?;
+            vem_case::export::parquet::write_parquet(&ev, output)?;
             "vestigo-parquet"
         }
     };

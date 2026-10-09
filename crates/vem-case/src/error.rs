@@ -26,5 +26,10 @@ pub enum CaseError {
     Export(String),
     #[error("integrity: {0}")]
     IntegrityMismatch(String),
-
+    #[error("refusing: {path} is inside evidence root {root}; nothing may be created under an evidence root")]
+    InsideEvidence { path: PathBuf, root: PathBuf },
+    #[error("refusing to attach {root}: it overlaps the case directory {case}")]
+    EvidenceOverlapsCase { root: PathBuf, case: PathBuf },
+    #[error("no session with id {0}")]
+    NoSuchSession(i64),
 }

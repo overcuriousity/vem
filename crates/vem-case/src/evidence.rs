@@ -151,6 +151,17 @@ fn change_time(m: &std::fs::Metadata) -> Option<String> {
     }
 }
 
+/// Refuses an evidence root that contains, or lies inside, the case directory (spec §3: nothing is
+/// ever created under an evidence root, and the case must not ingest itself).
+pub fn check_root_vs_case(root: &Path, case_dir: &Path) -> Result<(), CaseError> {
+    let case = case_dir.canonicalize()?;
+    if case.starts_with(root) || root.starts_with(&case) {
+        return Err(CaseError::EvidenceOverlapsCase { root: root.to_path_buf(), case });
+    }
+    Ok(())
+}
+
+/// Immediate child directories of `path` that identify as a harness directory (one level only).
 pub fn child_candidates(path: &Path) -> Vec<(PathBuf, Vec<Identification>)> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(path) else { return out };
@@ -192,6 +203,7 @@ fn identify(root: &Path, forced: Option<Harness>) -> Result<Identification, Case
 
 pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<AttachReport, CaseError> {
     let root = path.canonicalize()?;
+    check_root_vs_case(&root, &case.dir)?;
     let identification = identify(&root, opts.harness)?;
     let adapter = vem_adapters::adapter_for(identification.harness)
         .ok_or_else(|| CaseError::NoAdapter(identification.harness.to_string()))?;

@@ -162,3 +162,22 @@ fn symlinks_are_recorded_and_never_followed() {
     let ing = vem_case::ingest::ingest(&mut case, None).unwrap();
     assert_eq!((ing.files_failed, ing.sessions), (0, 5), "the linked transcript is not parsed");
 }
+
+#[test]
+fn the_case_and_its_exports_stay_out_of_evidence_roots() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ev = tmp.path().join("ev");
+    copy_dir(&fixture_root(), &ev);
+    // A case created inside the evidence root.
+    let mut inner = Case::create(&ev.join("zcase"), "n", None).unwrap();
+    assert!(matches!(attach(&mut inner, &ev, opts("x")), Err(CaseError::EvidenceOverlapsCase { .. })));
+    std::fs::remove_dir_all(ev.join("zcase")).unwrap();
+    // Evidence inside the case directory.
+    let mut case = Case::create(&tmp.path().join("c"), "n", None).unwrap();
+    copy_dir(&fixture_root(), &tmp.path().join("c/exports/ev"));
+    assert!(matches!(attach(&mut case, &tmp.path().join("c/exports/ev"), opts("x")), Err(CaseError::EvidenceOverlapsCase { .. })));
+    // Exports are refused under an attached root, allowed elsewhere.
+    attach(&mut case, &ev, opts("x")).unwrap();
+    assert!(matches!(vem_case::export::check_output_path(&case, &ev.join("projects/out.jsonl")), Err(CaseError::InsideEvidence { .. })));
+    assert!(vem_case::export::check_output_path(&case, &tmp.path().join("out.jsonl")).is_ok());
+}

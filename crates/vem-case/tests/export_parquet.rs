@@ -16,7 +16,7 @@ fn writes_vestigo_v1_schema_and_footer() {
     ingest(&mut case, None).unwrap();
     let ev = events(&case, &Scope::Case).unwrap();
     let out = tmp.path().join("case.parquet");
-    let report = write_parquet(&case, &ev, &out).unwrap();
+    let report = write_parquet(&ev, &out).unwrap();
     assert_eq!(report.rows, ev.len());
     assert!(report.original_files >= 4, "S1, S0, subagent, orphan transcripts and history.jsonl");
 

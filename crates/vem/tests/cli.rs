@@ -59,6 +59,12 @@ fn full_headless_workflow() {
     vem().args(["export", &case_s, "--format", "vestigo-parquet", "-o", pq.to_str().unwrap()]).assert().success();
     assert!(std::fs::metadata(&pq).unwrap().len() > 0);
 
+    // Nothing may be written under an evidence root, and an unknown scope is an error, not an empty file (I10, M11).
+    vem().args(["export", &case_s, "--format", "timesketch-jsonl", "--session", "99999", "-o", tmp.path().join("none.jsonl").to_str().unwrap()]).assert().failure().stderr(predicate::str::contains("no session"));
+    assert!(!tmp.path().join("none.jsonl").exists());
+    vem().args(["export", &case_s, "--format", "timesketch-jsonl", "-o", fixture().join("out.jsonl").to_str().unwrap()]).assert().failure().stderr(predicate::str::contains("inside evidence root"));
+    assert!(!fixture().join("out.jsonl").exists());
+
     vem().args(["verify", &case_s]).assert().success().stdout(predicate::str::contains("drifted: 0")).stdout(predicate::str::contains("missing: 0"));
 
     let audits = vem().args(["--json", "inventory", &case_s]).output().unwrap();

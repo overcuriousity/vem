@@ -3,7 +3,7 @@
 use super::Event;
 use crate::case::now;
 use crate::error::CaseError;
-use crate::{Case, TOOL_VERSION};
+use crate::TOOL_VERSION;
 use arrow::array::{ArrayRef, ListBuilder, MapBuilder, MapFieldNames, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
 use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
@@ -59,7 +59,7 @@ fn parquet_err(e: parquet::errors::ParquetError) -> CaseError {
     CaseError::Export(e.to_string())
 }
 
-pub fn write_parquet(case: &Case, events: &[Event], out: &Path) -> Result<ParquetReport, CaseError> {
+pub fn write_parquet(events: &[Event], out: &Path) -> Result<ParquetReport, CaseError> {
     let mut source_file = StringBuilder::new();
     let mut file_hash = StringBuilder::new();
     let mut byte_offset = UInt64Builder::new();
@@ -72,7 +72,8 @@ pub fn write_parquet(case: &Case, events: &[Event], out: &Path) -> Result<Parque
     let mut display_name = StringBuilder::new();
     let mut tags = ListBuilder::new(StringBuilder::new());
     let mut attributes = MapBuilder::new(Some(map_names()), StringBuilder::new(), StringBuilder::new());
-    let mut originals: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    // Keyed by (sha256, path): identical files at two paths are two original files.
+    let mut originals: BTreeMap<(String, String), serde_json::Value> = BTreeMap::new();
 
     for e in events {
         source_file.append_value(&e.provenance.source_file);
@@ -97,7 +98,7 @@ pub fn write_parquet(case: &Case, events: &[Event], out: &Path) -> Result<Parque
             attributes.values().append_value(v);
         }
         attributes.append(true).map_err(arrow_err)?;
-        originals.entry(e.provenance.file_sha256.clone()).or_insert_with(|| {
+        originals.entry((e.provenance.file_sha256.clone(), e.provenance.source_file.clone())).or_insert_with(|| {
             let name = Path::new(&e.provenance.source_file).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| e.provenance.source_file.clone());
             serde_json::json!({ "name": name, "sha256": e.provenance.file_sha256, "size_bytes": e.provenance.file_size, "path": e.provenance.source_file, "mtime": e.provenance.file_mtime })
         });
@@ -138,6 +139,5 @@ pub fn write_parquet(case: &Case, events: &[Event], out: &Path) -> Result<Parque
     let mut writer = ArrowWriter::try_new(file, schema, Some(props)).map_err(parquet_err)?;
     writer.write(&batch).map_err(parquet_err)?;
     writer.close().map_err(parquet_err)?;
-    let _ = case;
     Ok(ParquetReport { rows: events.len(), original_files: original_files.len() })
 }
