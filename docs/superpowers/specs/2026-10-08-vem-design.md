@@ -1,7 +1,7 @@
 # Vestigia Ex Machina (vem) — Design Specification
 
 Date: 2026-10-08 (revised 2026-10-09)
-Status: under review
+Status: approved for planning
 
 ## 1. Purpose
 
