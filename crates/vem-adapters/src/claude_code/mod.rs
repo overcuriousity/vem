@@ -51,6 +51,7 @@ impl HarnessAdapter for ClaudeCodeAdapter {
                     Ok(()) // meta.json and tool-results/*.txt are inventoried and retained, not parsed
                 }
             }
+            STORE_HISTORY => sidecars::parse_history(ctx, sink),
             _ => Ok(()),
         }
     }

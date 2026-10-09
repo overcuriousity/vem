@@ -115,7 +115,6 @@ pub(crate) struct PendingToolUse {
     pub started: Timestamp,
 }
 
-#[allow(dead_code)] // root, session_id, pending are read by Tasks 7-9
 pub(crate) struct TranscriptState<'a> {
     pub root: &'a Path,
     pub handle: SourceFileHandle,
@@ -226,7 +225,10 @@ impl<'a> TranscriptState<'a> {
                 }];
                 self.meta_record(&rtype, v, prov, blocks, sink);
             }
-            // FILE HISTORY (Task 9): "file-history-delta" gains an observation here.
+            "file-history-delta" => {
+                self.file_history_delta(&v, &prov, sink);
+                self.meta_record(&rtype, v, prov, Vec::new(), sink);
+            }
             t if KNOWN_META.contains(&t) => self.meta_record(&rtype, v, prov, Vec::new(), sink),
             other => {
                 self.anomaly(
@@ -314,6 +316,54 @@ impl<'a> TranscriptState<'a> {
             },
         );
         super::tools::pair_blocks(self, handle, &blocks, tool_use_result.as_ref(), &timestamp, &prov, sink);
+    }
+
+    /// A `file-history-delta` records that the harness backed up `trackingPath` before changing it.
+    /// The backup lives at `file-history/<session>/<backupFileName>`; when present it is the before-content.
+    pub fn file_history_delta(&mut self, v: &Value, prov: &Provenance, sink: &mut dyn ParseSink) {
+        let tracking = str_field(v, "trackingPath");
+        let backup = v.get("backup").cloned().unwrap_or(Value::Null);
+        let backup_name = str_field(&backup, "backupFileName");
+        let real_parent = str_field(&backup, "realParentDir");
+        let path = match (&real_parent, &tracking) {
+            (Some(dir), Some(t)) => {
+                let base = Path::new(t).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| t.clone());
+                Some(format!("{}/{}", dir.trim_end_matches('/'), base))
+            }
+            (None, Some(t)) => Some(t.clone()),
+            _ => None,
+        };
+        let before_blob = backup_name.as_ref().and_then(|name| {
+            let p = self.root.join("file-history").join(&self.session_id).join(name);
+            std::fs::read(p).ok().map(|bytes| sink.blob(&bytes))
+        });
+        let timestamp = v
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .or_else(|| backup.get("backupTime").and_then(Value::as_str))
+            .and_then(Timestamp::stored)
+            .unwrap_or_else(Timestamp::absent);
+        sink.observation(
+            self.session,
+            ObservationDraft {
+                kind: ObservationKind::FileEdited,
+                derived_from: Derivation::Record(prov.clone()),
+                path,
+                command: None,
+                before_blob,
+                after_blob: None,
+                timestamp,
+                confidence: Confidence::Medium,
+                details: json!({
+                    "source": "file-history-delta",
+                    "trackingPath": tracking,
+                    "backupFileName": backup_name,
+                    "version": backup.get("version").cloned().unwrap_or(Value::Null),
+                    "backupTime": backup.get("backupTime").cloned().unwrap_or(Value::Null),
+                    "messageId": str_field(v, "messageId"),
+                }),
+            },
+        );
     }
 
     pub fn finish(&mut self, sink: &mut dyn ParseSink) {
