@@ -240,15 +240,25 @@ pub fn raw_record(case: &Case, provenance_id: i64) -> Result<Vec<u8>, CaseError>
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SearchHit { pub block_id: i64, pub message_id: i64, pub session_id: i64, pub snippet: String }
+pub struct SearchHit { pub block_id: i64, pub message_id: i64, pub session_id: i64, pub tool_call_id: Option<i64>, pub snippet: String }
 
+/// Case-wide full-text search over message blocks and tool calls (name, input, result). A tool-call hit
+/// points at its `tool_use` block. The query is matched as one phrase.
 pub fn search(case: &Case, query: &str, limit: usize) -> Result<Vec<SearchHit>, CaseError> {
     let mut stmt = case.conn.prepare(
-        "SELECT b.id, b.message_id, m.session_id, snippet(blocks_fts, 0, '[', ']', '…', 12)
-         FROM blocks_fts JOIN blocks b ON b.id = blocks_fts.rowid JOIN messages m ON m.id = b.message_id
-         WHERE blocks_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+        "SELECT block_id, message_id, session_id, tool_call_id, snippet FROM (
+             SELECT b.id AS block_id, b.message_id AS message_id, m.session_id AS session_id, NULL AS tool_call_id,
+                    snippet(blocks_fts, 0, '[', ']', '…', 12) AS snippet, blocks_fts.rank AS rank
+             FROM blocks_fts JOIN blocks b ON b.id = blocks_fts.rowid JOIN messages m ON m.id = b.message_id
+             WHERE blocks_fts MATCH ?1
+             UNION ALL
+             SELECT b.id, b.message_id, t.session_id, t.id,
+                    snippet(tool_calls_fts, -1, '[', ']', '…', 12), tool_calls_fts.rank
+             FROM tool_calls_fts JOIN tool_calls t ON t.id = tool_calls_fts.rowid JOIN blocks b ON b.id = t.tool_use_block_id
+             WHERE tool_calls_fts MATCH ?1
+         ) ORDER BY rank LIMIT ?2",
     )?;
     let quoted = format!("\"{}\"", query.replace('"', "\"\""));
-    let rows = stmt.query_map(params![quoted, limit as i64], |r| Ok(SearchHit { block_id: r.get(0)?, message_id: r.get(1)?, session_id: r.get(2)?, snippet: r.get(3)? }))?;
+    let rows = stmt.query_map(params![quoted, limit as i64], |r| Ok(SearchHit { block_id: r.get(0)?, message_id: r.get(1)?, session_id: r.get(2)?, tool_call_id: r.get(3)?, snippet: r.get(4)? }))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }

@@ -110,6 +110,13 @@ fn full_text_search_finds_blocks() {
     let hits = search(&case, "notes", 10).unwrap();
     assert!(!hits.is_empty());
     assert!(hits.iter().all(|h| h.snippet.to_lowercase().contains("notes")));
+    // Tool inputs are searchable (I8): the command only appears in the tool_use input.
+    let cmd = search(&case, "ls -la", 10).unwrap();
+    let hit = cmd.iter().find(|h| h.tool_call_id.is_some()).expect("tool call hit for a command");
+    let s1 = by_hid(&case, S1);
+    let tc = tool_calls(&case, s1.id).unwrap().into_iter().find(|t| Some(t.id) == hit.tool_call_id).unwrap();
+    assert_eq!(tc.input["command"], "ls -la");
+    assert_eq!(hit.block_id, tc.tool_use_block_id);
     assert!(search(&case, "zzzz-nothing-here", 10).unwrap().is_empty());
 }
 

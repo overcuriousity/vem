@@ -37,6 +37,7 @@ fn ingests_fixture_into_canonical_rows() {
     assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 5);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 23);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM blocks"), count(&case, "SELECT COUNT(*) FROM blocks_fts"));
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM tool_calls"), count(&case, "SELECT COUNT(*) FROM tool_calls_fts"));
     assert_eq!(count(&case, "SELECT COUNT(*) FROM anomalies WHERE kind = 'truncated_line' AND provenance_id IS NOT NULL"), 1);
     assert_eq!(
         count(&case, "SELECT COUNT(*) FROM anomalies a JOIN sessions s ON s.id = a.session_id WHERE a.kind = 'missing_transcript' AND s.kind = 'sidecar_only'"),

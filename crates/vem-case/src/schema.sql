@@ -229,3 +229,15 @@ BEGIN
     INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES ('delete', old.id, old.text);
     INSERT INTO blocks_fts(rowid, text) VALUES (new.id, new.text);
 END;
+
+-- Tool inputs and results are searchable too (spec §7): name, input JSON and result text.
+CREATE VIRTUAL TABLE tool_calls_fts USING fts5(name, input, result_text, content='tool_calls', content_rowid='id');
+CREATE TRIGGER tool_calls_fts_ai AFTER INSERT ON tool_calls
+BEGIN INSERT INTO tool_calls_fts(rowid, name, input, result_text) VALUES (new.id, new.name, new.input, new.result_text); END;
+CREATE TRIGGER tool_calls_fts_ad AFTER DELETE ON tool_calls
+BEGIN INSERT INTO tool_calls_fts(tool_calls_fts, rowid, name, input, result_text) VALUES ('delete', old.id, old.name, old.input, old.result_text); END;
+CREATE TRIGGER tool_calls_fts_au AFTER UPDATE OF name, input, result_text ON tool_calls
+BEGIN
+    INSERT INTO tool_calls_fts(tool_calls_fts, rowid, name, input, result_text) VALUES ('delete', old.id, old.name, old.input, old.result_text);
+    INSERT INTO tool_calls_fts(rowid, name, input, result_text) VALUES (new.id, new.name, new.input, new.result_text);
+END;
