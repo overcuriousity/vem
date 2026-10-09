@@ -1,15 +1,16 @@
 # Vestigia Ex Machina (vem) — Design Specification
 
-Date: 2026-10-08
-Status: approved for planning
+Date: 2026-10-08 (revised 2026-10-09)
+Status: under review
 
 ## 1. Purpose
 
 `vem` is a forensic application for static, post-incident analysis of the on-disk traces
-left by agentic AI coding harnesses. An examiner receives a collected home directory or a
-mounted filesystem image, attaches it to a case, and reconstructs what the agents did on
-that machine: what the user asked, what the assistant said, which commands ran, which
-files changed, what data was exposed, and when.
+left by agentic AI coding harnesses. An examiner receives a collected **harness
+directory** (a `.claude`, `.codex` or `.cursor` directory, or Cursor's IDE application
+directory), attaches it to a case, and reconstructs what the agents did on the examined
+machine: what the user asked, what the assistant said, which commands ran, which files
+changed, what data was exposed, and when.
 
 The primary interface is a **conversation viewer**: the examiner selects a session and
 reads user and assistant messages in order, drilling into tool calls, raw records and
@@ -34,8 +35,10 @@ The first prototype covers three harnesses: **Claude Code**, **Codex CLI**, and
 ### Explicit assumptions
 
 - Implementation language is Rust (the repository ships a Cargo `.gitignore`), Apache 2.0.
-- Evidence arrives as a readable directory tree (collected home directory, mounted image,
-  extracted triage archive). The tool never parses raw disk images.
+- Evidence arrives as one or more collected harness directories, readable on the
+  examiner's workstation. The examiner does not have the home directory, the filesystem
+  image, the shell configuration or the project checkouts. The collected directory may
+  have been renamed, so harnesses are identified by content, not by folder name.
 - Examined machines may be Linux, macOS or Windows; the examiner workstation runs the tool
   locally, single user, offline.
 - The Claude Code adapter is grounded in real data available during development. Codex
@@ -62,7 +65,7 @@ CLI surface (prototype):
 
 ```
 vem case new <dir> --name <name> [--examiner <name>]
-vem evidence add <case> <path> --label <label> [--host H] [--user U] [--os linux|macos|windows]
+vem evidence add <case> <path> --label <label> [--host H] [--user U] [--os linux|macos|windows] [--harness claude-code|codex|cursor|cursor-ide]
 vem ingest <case> [--root <id>] [--no-retain]
 vem verify <case>
 vem export <case> --format timesketch-jsonl|timesketch-csv|vestigo-parquet [--root ID] [--session ID] -o <file>
@@ -72,31 +75,35 @@ vem inventory <case>                  # text dump of stores, files, anomalies
 
 ## 3. Evidence and discovery
 
-**Evidence root.** Path plus label, host, user, OS hint, and a `root_kind` classified
-on attach:
+**Evidence root.** One collected harness directory: path plus examiner-entered label,
+host, user and OS hint, and the identified `harness` (`ClaudeCode`, `Codex`, `Cursor`,
+`CursorIde`). A case holds any number of roots; a Cursor investigation typically needs
+two (`.cursor` and the IDE application directory), and the inventory states which Cursor
+sub-stores are absent so the examiner knows what else to request.
 
-- `FilesystemRoot`: contains `home/`, `Users/`, or `root/`; every user home found below
-  is scanned (including WSL-mounted homes such as `mnt/c/Users/<u>`).
-- `HomeDir`: contains dotfiles or `Library/`/`AppData/` directly.
-- `HarnessDir`: the path itself is a harness configuration directory (basename
-  `.claude`, `.codex`, `.cursor`, `Cursor`, or signature files present).
+**Harness identification** on attach is by content signature, never by folder name:
 
-**Discovery strategies**, run in order; each discovered store records which one found it:
+- Claude Code: a `projects/` directory containing `*.jsonl` whose records carry
+  `parentUuid` and `sessionId`; or `history.jsonl`, `file-history/`, `settings.json`.
+- Codex: a `sessions/` or `archived_sessions/` tree containing `rollout-*.jsonl` whose
+  first record is `"type":"session_meta"`; or `session_index.jsonl`, `config.toml`.
+- Cursor (`.cursor`): `projects/*/agent-transcripts/`, `chats/*/*/store.db`,
+  `acp-sessions/`, `ai-tracking/ai-code-tracking.db`, `prompt_history.json`.
+- Cursor IDE application directory: `User/globalStorage/state.vscdb` with a
+  `cursorDiskKV` table, `User/workspaceStorage/`, `User/History/`.
 
-1. `Convention`: OS-conventional paths relative to each home directory
-   (`~/.claude`, `~/.codex`, `~/.cursor`, `~/.config/cursor`, `~/.config/Cursor`,
-   `~/Library/Application Support/Cursor`, `AppData/Roaming/Cursor`).
-2. `EnvHint`: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_CONFIG_HOME` parsed from shell
-   startup files in that home (`.bashrc`, `.bash_profile`, `.zshrc`, `.zshenv`,
-   `.profile`, `.config/fish/config.fish`, `.config/environment.d/*.conf`). Values that
-   reference `$HOME` are resolved against the evidence home, not the examiner's.
-   Windows registry hints are out of scope for the prototype.
-3. `SignatureScan`: bounded-depth walk (skipping `node_modules`, `.git`, `target`,
-   caches) that recognizes stores by content: a `.jsonl` whose first record has
-   `"type":"session_meta"` (Codex), a `.jsonl` whose records carry `parentUuid` and
-   `sessionId` (Claude Code), a directory named `agent-transcripts`, a `state.vscdb`
-   with a `cursorDiskKV` table, a `store.db` under a `chats/` tree.
-4. `Manual`: the examiner points at a store directly.
+If the path is ambiguous (several signatures match) or unrecognized, attach fails
+unless `--harness` is given, and the reason is reported. If the path is not itself a
+harness directory but contains one or more as immediate children (a collection folder
+holding `.claude` and `.cursor` side by side), the tool lists those children and the
+examiner attaches each as its own root. The scan goes one level deep, no further.
+
+**Store discovery** inside an identified root enumerates the sub-stores listed per
+adapter in §6 by their content signatures. Each store records its discovery method:
+`Signature` or `Manual` (the examiner pointed at a store the signatures missed).
+Generation is detected from content: the per-record `version` field and `settings.json`
+for Claude Code, `cli_version` in `session_meta` and `config.toml` for Codex, which
+sub-trees exist and which tables `state.vscdb` holds for Cursor.
 
 **Read-only guarantee.** Evidence files are opened read-only. SQLite files inside the
 evidence are opened with `?immutable=1` so no `-wal`/`-shm` files are created. Nothing
@@ -161,11 +168,12 @@ JSON in `attributes`, plus an `UnknownRecordType` anomaly at `Info` severity.
 
 - Every Message, Block and Anomaly carries a Provenance row: source file, byte offset
   and length, record index, SHA-256 of the raw record bytes, parser name and version.
-- Attaching evidence builds a manifest: SHA-256, size and filesystem timestamps for every
-  file in every discovered store. The whole-root manifest is optional (`--manifest-all`).
-- By default ingest retains a content-addressed copy of each store file in the case
-  directory, so the case remains self-contained after the evidence is unmounted and the
-  raw-bytes view keeps working. `--no-retain` disables this.
+- Attaching evidence builds a manifest of the whole root: SHA-256, size and filesystem
+  timestamps for every file under it, whether or not a parser understands it. Files no
+  adapter claims are listed in the inventory as unparsed.
+- By default ingest retains a content-addressed copy of every file in the root inside
+  the case directory, so the case remains self-contained after the evidence is detached
+  and the raw-bytes view keeps working. `--no-retain` disables this.
 - `vem verify` re-hashes evidence and retained blobs and records `HashDrift` anomalies.
 - Claude Code file-history snapshots, Cursor local-history entries, checkpoints and
   `agent-tools/*.txt` sidecars become ContentBlobs referenced by Observations so the
@@ -179,7 +187,7 @@ Each adapter implements `Discover` (root → store candidates) and, per generati
 `Parse` (source file → stream of canonical records, tool calls, identity claims,
 anomalies). Parsers are streaming and bounded in memory: no file is read whole.
 
-### 6.1 Claude Code (`~/.claude` or `$CLAUDE_CONFIG_DIR`)
+### 6.1 Claude Code (a collected `.claude` directory)
 
 Stores: `projects/<encoded-cwd>/<uuid>.jsonl` (primary), `projects/<cwd>/<uuid>/subagents/*.jsonl`,
 `*.orphaned-*` and `*.superseded-*` siblings (→ `OrphanedFile`/`SupersededFile` anomalies,
@@ -203,7 +211,7 @@ Observations: `Bash` → `CommandExecuted`; `Read`/`Glob`/`Grep` → `FileRead`;
 from `toolUseResult` or file-history; `WebFetch`/`WebSearch` → `UrlReferenced`;
 `Agent`/`Task` → `SubagentSpawned`; paste-cache and uploads → `PasteDetected`/`UploadDetected`.
 
-### 6.2 Codex CLI (`~/.codex` or `$CODEX_HOME`)
+### 6.2 Codex CLI (a collected `.codex` directory)
 
 Stores: `sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`, `archived_sessions/` (same
 layout → `ArchivedSession` anomaly, Info), `session_index.jsonl`, `history.jsonl`,
@@ -225,9 +233,12 @@ Observations: shell / `local_shell_call` / `exec_command` → `CommandExecuted`;
 `apply_patch` → `FileEdited` per file in the patch (hunks retained as details);
 `web_search_call` → `UrlReferenced`.
 
-### 6.3 Cursor (`~/.cursor`, `$XDG_CONFIG_HOME/cursor`, IDE app-support directory)
+### 6.3 Cursor (a collected `.cursor` directory and/or the IDE application directory)
 
-Three generations, each a separate store kind with its own parser:
+Cursor splits its traces across two directories that arrive as two evidence roots:
+`.cursor` (agent transcripts, chat store, ACP sessions, AI code tracking, prompt
+history) and the IDE application directory (`state.vscdb`, workspace storage, local
+file history). Three store generations, each a separate store kind with its own parser:
 
 - **Agent transcripts** `projects/<slug>/agent-transcripts/<id>/<id>.jsonl` with
   `subagents/*.jsonl` and `agent-tools/*.txt`. Anthropic-style `role` + `message.content[]`
@@ -243,7 +254,9 @@ Three generations, each a separate store kind with its own parser:
   extract strings, producing Messages with `origin = Derived`, `confidence = Low`.
 
 Cross-generation ids (`composerId`, store.db session id, transcript id) are recorded as
-IdentityClaims with join status; sessions are never merged on an unmatched claim.
+IdentityClaims with join status, and joins run across roots of the same case so that
+`.cursor` and the IDE directory link when both are present; sessions are never merged on
+an unmatched claim.
 `ai-tracking/ai-code-tracking.db` → attribution details on `FileEdited` observations;
 `User/History/` → before/after ContentBlobs; `prompt_history.json` → `PasteDetected`-style
 prompt observations.
@@ -268,7 +281,8 @@ exports.
 
 Axum serves a JSON API and the embedded frontend on `127.0.0.1` only.
 
-- **Case home**: evidence roots, discovered stores with discovery method, ingest status,
+- **Case home**: evidence roots with identified harness, discovered stores with
+  discovery method, expected-but-absent sub-stores, unparsed files, ingest status,
   inventory tree with hashes, anomaly list filterable by kind and severity.
 - **Sessions list**: filter by harness, root, project, time range, kind, has subagents,
   has anomalies. Columns: harness, title or first prompt, project, start/end with
@@ -317,10 +331,11 @@ Scope: whole case, one root, or one session.
 
 ## 11. Testing
 
-- `fixtures/<harness>/<generation>/`: sanitized or synthesized evidence trees, including
-  deliberately truncated files, orphaned and superseded siblings, archived Codex rollouts,
-  a Cursor transcript tree without timestamps, and a `state.vscdb` with composer and
-  bubble records.
+- `fixtures/<harness>/<generation>/`: sanitized or synthesized harness directories,
+  including deliberately truncated files, orphaned and superseded siblings, archived
+  Codex rollouts, a Cursor transcript tree without timestamps, a `state.vscdb` with
+  composer and bubble records, a renamed harness directory (identification by content),
+  a collection folder holding two harness directories, and an unrecognized directory.
 - Adapter snapshot tests (`insta`) over canonical output for each fixture.
 - Property tests for the tolerant JSONL reader: truncation at any byte, missing trailing
   newline, invalid UTF-8, CRLF, empty lines.
@@ -333,8 +348,8 @@ Scope: whole case, one root, or one session.
 
 ## 12. Out of scope for the prototype
 
-Raw disk image parsing; live acquisition on the examined host; Windows registry
-environment hints; adapters for Gemini CLI, Copilot CLI, OpenCode, Aider, Kiro and Zed
+Raw disk image parsing; home-directory or filesystem-wide scanning; live acquisition on
+the examined host; adapters for Gemini CLI, Copilot CLI, OpenCode, Aider, Kiro and Zed
 (the adapter trait is designed to admit them); a generated written report; multi-user
 authentication; statistical or embedding-based anomaly detection (Vestigo's domain);
 a complete Cursor protobuf schema.
