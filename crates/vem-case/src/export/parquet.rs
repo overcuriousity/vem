@@ -11,7 +11,7 @@ use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::file::metadata::KeyValue;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -117,19 +117,22 @@ pub fn write_parquet(case: &Case, events: &[Event], out: &Path) -> Result<Parque
         Arc::new(tags.finish()),
         Arc::new(attributes.finish()),
     ];
-    let schema = Arc::new(schema());
-    let batch = RecordBatch::try_new(schema.clone(), columns).map_err(arrow_err)?;
-
     let original_files: Vec<serde_json::Value> = originals.into_values().collect();
-    let metadata = vec![
-        KeyValue::new("vestigo.format_version".to_string(), "1".to_string()),
-        KeyValue::new("vestigo.converter_name".to_string(), "vem".to_string()),
-        KeyValue::new("vestigo.converter_version".to_string(), TOOL_VERSION.to_string()),
-        KeyValue::new("vestigo.original_files".to_string(), serde_json::to_string(&original_files)?),
-        KeyValue::new("vestigo.converted_at".to_string(), now()),
-        KeyValue::new("vestigo.row_counts".to_string(), serde_json::json!({ "parsed": events.len(), "skipped_malformed": 0, "skipped_by_time": 0 }).to_string()),
-        KeyValue::new("vestigo.timezone_assumption".to_string(), "all timestamps stored UTC by vem; origin per row in timestamp_desc and attributes.ts_origin".to_string()),
+    let footer: Vec<(String, String)> = vec![
+        ("vestigo.format_version".to_string(), "1".to_string()),
+        ("vestigo.converter_name".to_string(), "vem".to_string()),
+        ("vestigo.converter_version".to_string(), TOOL_VERSION.to_string()),
+        ("vestigo.original_files".to_string(), serde_json::to_string(&original_files)?),
+        ("vestigo.converted_at".to_string(), now()),
+        ("vestigo.row_counts".to_string(), serde_json::json!({ "parsed": events.len(), "skipped_malformed": 0, "skipped_by_time": 0 }).to_string()),
+        ("vestigo.timezone_assumption".to_string(), "all timestamps stored UTC by vem; origin per row in timestamp_desc and attributes.ts_origin".to_string()),
     ];
+    // Vestigo reads `schema_arrow.metadata`, which pyarrow rebuilds from the serialized Arrow schema
+    // (`ARROW:schema`), so the keys must live on the Arrow schema. They are also kept as plain
+    // Parquet footer key/value entries for readers that look there.
+    let schema = Arc::new(schema().with_metadata(footer.iter().cloned().collect::<HashMap<_, _>>()));
+    let batch = RecordBatch::try_new(schema.clone(), columns).map_err(arrow_err)?;
+    let metadata: Vec<KeyValue> = footer.into_iter().map(|(k, v)| KeyValue::new(k, v)).collect();
     let props = WriterProperties::builder().set_key_value_metadata(Some(metadata)).build();
     let file = std::fs::File::create(out)?;
     let mut writer = ArrowWriter::try_new(file, schema, Some(props)).map_err(parquet_err)?;

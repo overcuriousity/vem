@@ -29,6 +29,19 @@ fn writes_vestigo_v1_schema_and_footer() {
     assert_eq!(schema.field_with_name("timestamp").unwrap().data_type(), &DataType::Timestamp(TimeUnit::Millisecond, Some("UTC".into())));
     assert!(matches!(schema.field_with_name("tags").unwrap().data_type(), DataType::List(_)));
     assert!(matches!(schema.field_with_name("attributes").unwrap().data_type(), DataType::Map(_, _)));
+    // Vestigo validates pyarrow's `ParquetFile.schema_arrow.metadata`, which pyarrow rebuilds from the
+    // embedded `ARROW:schema` entry alone. arrow-rs's reader merges the footer key/values into the schema
+    // metadata, so decode the embedded schema with only that entry, the way pyarrow sees it.
+    let fm = builder.metadata().file_metadata();
+    let arrow_only: Vec<parquet::file::metadata::KeyValue> =
+        fm.key_value_metadata().into_iter().flatten().filter(|kv| kv.key == parquet::arrow::ARROW_SCHEMA_META_KEY).cloned().collect();
+    assert_eq!(arrow_only.len(), 1, "file must embed an Arrow schema");
+    let embedded = parquet::arrow::parquet_to_arrow_schema(fm.schema_descr(), Some(&arrow_only)).unwrap();
+    let arrow_meta = embedded.metadata();
+    assert_eq!(arrow_meta.get("vestigo.format_version").map(String::as_str), Some("1"), "Arrow schema metadata must carry the Vestigo keys");
+    for k in ["vestigo.converter_name", "vestigo.converter_version", "vestigo.original_files"] {
+        assert!(arrow_meta.contains_key(k), "Arrow schema metadata missing {k}");
+    }
     let kv = builder.metadata().file_metadata().key_value_metadata().cloned().unwrap_or_default();
     let get = |k: &str| kv.iter().find(|x| x.key == k).and_then(|x| x.value.clone()).unwrap_or_else(|| panic!("missing footer key {k}"));
     assert_eq!(get("vestigo.format_version"), "1");
