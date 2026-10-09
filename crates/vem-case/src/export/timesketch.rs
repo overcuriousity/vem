@@ -7,6 +7,8 @@ use std::io::Write;
 
 const FIXED: [&str; 7] = ["datetime", "timestamp_desc", "message", "source", "source_long", "display_name", "tag"];
 
+/// Timesketch reads tags from the `tag` key: a JSON array in JSONL, a comma-separated list in CSV.
+/// Writes and flushes; a flush error (e.g. disk full) is returned, never swallowed.
 pub fn write_jsonl(events: &[Event], mut w: impl Write) -> Result<(), CaseError> {
     for e in events {
         let mut obj = serde_json::Map::new();
@@ -16,7 +18,7 @@ pub fn write_jsonl(events: &[Event], mut w: impl Write) -> Result<(), CaseError>
         obj.insert("source".into(), e.source.clone().into());
         obj.insert("source_long".into(), e.source_long.clone().into());
         obj.insert("display_name".into(), e.display_name.clone().into());
-        obj.insert("tags".into(), serde_json::Value::Array(e.tags.iter().cloned().map(serde_json::Value::String).collect()));
+        obj.insert("tag".into(), serde_json::Value::Array(e.tags.iter().cloned().map(serde_json::Value::String).collect()));
         for (k, v) in &e.attributes {
             if !FIXED.contains(&k.as_str()) && k != "tags" {
                 obj.insert(k.clone(), v.clone().into());
@@ -25,6 +27,7 @@ pub fn write_jsonl(events: &[Event], mut w: impl Write) -> Result<(), CaseError>
         serde_json::to_writer(&mut w, &serde_json::Value::Object(obj))?;
         w.write_all(b"\n")?;
     }
+    w.flush()?;
     Ok(())
 }
 
@@ -49,7 +52,7 @@ pub fn write_csv(events: &[Event], w: impl Write) -> Result<(), CaseError> {
             e.source.clone(),
             e.source_long.clone(),
             e.display_name.clone(),
-            e.tags.join("|"),
+            e.tags.join(","),
         ];
         for k in &extra {
             row.push(e.attributes.get(k).cloned().unwrap_or_default());

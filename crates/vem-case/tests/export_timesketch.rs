@@ -20,10 +20,13 @@ fn ingested() -> (tempfile::TempDir, Case) {
 fn one_event_per_message_tool_call_and_observation() {
     let (_t, case) = ingested();
     let ev = events(&case, &Scope::Case).unwrap();
-    assert_eq!(ev.len(), 23 + 4 + 6, "23 messages: the deleted session's history prompt is kept");
+    assert_eq!(ev.len(), 23 + 4 + 6);
+    // A record without a timestamp is placed at its session's start, labelled inferred (I5).
     let first = ev.iter().find(|e| e.attributes.get("record_type").map(String::as_str) == Some("ai-title")).unwrap();
-    assert_eq!(first.datetime, None);
-    assert_eq!(first.timestamp_desc, "No Timestamp");
+    assert_eq!(first.datetime.as_deref(), Some("2026-09-30T10:00:00.000Z"), "S1's first_ts");
+    assert_eq!(first.timestamp_desc, vem_case::export::events::SESSION_START_INFERRED);
+    assert!(first.tags.contains(&"inferred".to_string()));
+    assert_eq!(first.attributes["ts_origin"], "absent", "the record's own origin is kept");
     assert_eq!(first.source, "AI:CLAUDE_CODE");
     assert_eq!(first.source_long, "claude_code:message:meta");
     assert!(first.display_name.starts_with("alice:projects/"));
@@ -62,10 +65,11 @@ fn jsonl_lines_carry_timesketch_fields_and_attributes_flattened() {
     let lines: Vec<serde_json::Value> = String::from_utf8(buf).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     assert_eq!(lines.len(), ev.len());
     let with_time = lines.iter().find(|l| !l["datetime"].is_null()).unwrap();
-    for key in ["datetime", "timestamp_desc", "message", "source", "source_long", "display_name", "tags", "evidence_file_sha256", "evidence_byte_offset", "evidence_record_sha256"] {
+    for key in ["datetime", "timestamp_desc", "message", "source", "source_long", "display_name", "tag", "evidence_file_sha256", "evidence_byte_offset", "evidence_record_sha256"] {
         assert!(with_time.get(key).is_some(), "missing {key}");
     }
-    assert!(with_time["tags"].is_array());
+    assert!(with_time.get("tags").is_none(), "Timesketch reads `tag`, not `tags`");
+    assert!(with_time["tag"].is_array());
     assert!(with_time["evidence_byte_offset"].is_string(), "attributes are strings");
 }
 
@@ -83,6 +87,34 @@ fn csv_has_union_header_and_one_row_per_event() {
     let rows: Vec<csv::StringRecord> = rdr.records().map(|r| r.unwrap()).collect();
     assert_eq!(rows.len(), ev.len());
     assert!(rows.iter().all(|r| r.len() == headers.len()));
-    let tagged = rows.iter().find(|r| r[6].contains('|')).expect("pipe-joined tags");
-    assert!(tagged[6].contains("claude-code"));
+    let tagged = rows.iter().find(|r| r[6].starts_with("claude-code,")).expect("comma-separated tags");
+    assert!(tagged[6].split(',').count() >= 3, "{}", &tagged[6]);
+    assert!(!tagged[6].contains('|'));
+}
+
+/// Mirrors the rules of Timesketch's importer (`read_and_validate_jsonl` / `read_and_validate_csv`):
+/// `message`, `datetime` and `timestamp_desc` are mandatory, `datetime` must parse, rows without one are
+/// dropped, and `tag` is a list (JSONL) or a comma-separated string (CSV).
+#[test]
+fn every_event_survives_timesketch_validation() {
+    let (_t, case) = ingested();
+    let ev = events(&case, &Scope::Case).unwrap();
+    let mut buf = Vec::new();
+    write_jsonl(&ev, &mut buf).unwrap();
+    let lines: Vec<serde_json::Value> = String::from_utf8(buf).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    for l in &lines {
+        for key in ["message", "datetime", "timestamp_desc"] {
+            assert!(l[key].is_string() && !l[key].as_str().unwrap().is_empty(), "{key} missing in {l}");
+        }
+        assert!(chrono::DateTime::parse_from_rfc3339(l["datetime"].as_str().unwrap()).is_ok(), "{l}");
+        assert!(l["tag"].as_array().unwrap().iter().all(|t| t.is_string()));
+    }
+    let mut buf = Vec::new();
+    write_csv(&ev, &mut buf).unwrap();
+    let mut rdr = csv::Reader::from_reader(buf.as_slice());
+    for r in rdr.records() {
+        let r = r.unwrap();
+        assert!(chrono::DateTime::parse_from_rfc3339(&r[0]).is_ok(), "CSV datetime {:?}", &r[0]);
+        assert!(!r[1].is_empty() && !r[2].is_empty());
+    }
 }

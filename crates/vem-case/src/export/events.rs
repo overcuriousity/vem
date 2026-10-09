@@ -72,12 +72,29 @@ fn put(attrs: &mut BTreeMap<String, String>, key: &str, v: Option<String>) {
     }
 }
 
+/// `timestamp_desc` of an event whose record has no timestamp and which is placed at its session's start.
+pub const SESSION_START_INFERRED: &str = "Session Start (inferred, record has no timestamp)";
+
 struct Common {
     harness: String, root_label: String, session_db_id: i64, session_hid: String, session_kind: String, project_path: Option<String>,
     rel_path: String, file_sha: String, file_size: i64, file_mtime: Option<String>, byte_offset: i64, content_sha: String,
+    session_first_ts: Option<String>,
 }
 
 impl Common {
+    /// The event time and its description: the record's own timestamp; else the session's start, labelled
+    /// as inferred and tagged `inferred` (timeline tools drop events without a time); else none.
+    fn when(&self, ts: Option<String>, what: &str, origin: &str, tags: &mut Vec<String>) -> (Option<String>, String) {
+        match (ts, &self.session_first_ts) {
+            (Some(t), _) => (Some(t), timestamp_desc(what, origin)),
+            (None, Some(start)) => {
+                tags.push("inferred".to_string());
+                (Some(start.clone()), SESSION_START_INFERRED.to_string())
+            }
+            (None, None) => (None, timestamp_desc(what, origin)),
+        }
+    }
+
     fn base(&self, record_kind: &str, ts_origin: &str) -> (BTreeMap<String, String>, EventProvenance, String) {
         let mut a = BTreeMap::new();
         put(&mut a, "harness", Some(self.harness.clone()));
@@ -97,13 +114,13 @@ impl Common {
     }
 }
 
-const COMMON_COLS: &str = "st.harness, r.label, s.id, s.harness_session_id, s.kind, s.project_path, f.rel_path, f.sha256, f.size, f.mtime, p.byte_offset, p.content_sha256";
+const COMMON_COLS: &str = "st.harness, r.label, s.id, s.harness_session_id, s.kind, s.project_path, f.rel_path, f.sha256, f.size, f.mtime, p.byte_offset, p.content_sha256, s.first_ts";
 
 fn common_from(r: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<Common> {
     Ok(Common {
         harness: r.get(offset)?, root_label: r.get(offset + 1)?, session_db_id: r.get(offset + 2)?, session_hid: r.get(offset + 3)?, session_kind: r.get(offset + 4)?,
         project_path: r.get(offset + 5)?, rel_path: r.get(offset + 6)?, file_sha: r.get(offset + 7)?, file_size: r.get(offset + 8)?, file_mtime: r.get(offset + 9)?,
-        byte_offset: r.get(offset + 10)?, content_sha: r.get(offset + 11)?,
+        byte_offset: r.get(offset + 10)?, content_sha: r.get(offset + 11)?, session_first_ts: r.get(offset + 12)?,
     })
 }
 
@@ -140,7 +157,9 @@ pub fn events(case: &Case, scope: &Scope) -> Result<Vec<Event>, CaseError> {
             let (source, slug) = source_for(&c.harness);
             let body = text.unwrap_or_default();
             let message = if body.is_empty() { format!("[{}] {}: <{}>", c.harness, role, record_type) } else { format!("[{}] {}: {}", c.harness, role, truncate(&body, 4000)) };
-            Ok(Event { datetime: ts, timestamp_desc: timestamp_desc("Message Timestamp", &origin), message, source, source_long: format!("{slug}:message:{role}"), display_name: display, tags: vec![c.harness.clone(), role, origin], attributes: attrs, provenance: prov })
+            let mut tags = vec![c.harness.clone(), role.clone(), origin.clone()];
+            let (datetime, desc) = c.when(ts, "Message Timestamp", &origin, &mut tags);
+            Ok(Event { datetime, timestamp_desc: desc, message, source, source_long: format!("{slug}:message:{role}"), display_name: display, tags, attributes: attrs, provenance: prov })
         })?;
         out.extend(rows.collect::<Result<Vec<_>, _>>()?);
     }
@@ -173,7 +192,9 @@ pub fn events(case: &Case, scope: &Scope) -> Result<Vec<Event>, CaseError> {
                 .and_then(|v| ["command", "file_path", "url", "pattern", "description", "prompt"].iter().find_map(|k| v.get(k).and_then(|x| x.as_str()).map(String::from)))
                 .unwrap_or_else(|| truncate(&input, 200));
             let (source, slug) = source_for(&c.harness);
-            Ok(Event { datetime: ts, timestamp_desc: timestamp_desc("Tool Call Started", &origin), message: format!("[{}] tool {}: {}", c.harness, name, truncate(&summary, 500)), source, source_long: format!("{slug}:tool_call:{category}"), display_name: display, tags: vec![c.harness.clone(), "tool_call".to_string(), category, origin], attributes: attrs, provenance: prov })
+            let mut tags = vec![c.harness.clone(), "tool_call".to_string(), category.clone(), origin.clone()];
+            let (datetime, desc) = c.when(ts, "Tool Call Started", &origin, &mut tags);
+            Ok(Event { datetime, timestamp_desc: desc, message: format!("[{}] tool {}: {}", c.harness, name, truncate(&summary, 500)), source, source_long: format!("{slug}:tool_call:{category}"), display_name: display, tags, attributes: attrs, provenance: prov })
         })?;
         out.extend(rows.collect::<Result<Vec<_>, _>>()?);
     }
@@ -207,7 +228,9 @@ pub fn events(case: &Case, scope: &Scope) -> Result<Vec<Event>, CaseError> {
             put(&mut attrs, "confidence", Some(confidence.clone()));
             let what = command.clone().or(path.clone()).unwrap_or_default();
             let (source, slug) = source_for(&c.harness);
-            Ok(Event { datetime: ts, timestamp_desc: timestamp_desc("Observation Time", &origin), message: format!("[{}] {}: {}", c.harness, kind, truncate(&what, 500)), source, source_long: format!("{slug}:observation:{kind}"), display_name: display, tags: vec![c.harness.clone(), "observation".to_string(), kind, confidence, origin], attributes: attrs, provenance: prov })
+            let mut tags = vec![c.harness.clone(), "observation".to_string(), kind.clone(), confidence, origin.clone()];
+            let (datetime, desc) = c.when(ts, "Observation Time", &origin, &mut tags);
+            Ok(Event { datetime, timestamp_desc: desc, message: format!("[{}] {}: {}", c.harness, kind, truncate(&what, 500)), source, source_long: format!("{slug}:observation:{kind}"), display_name: display, tags, attributes: attrs, provenance: prov })
         })?;
         out.extend(rows.collect::<Result<Vec<_>, _>>()?);
     }
