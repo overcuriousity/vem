@@ -1,0 +1,23 @@
+[package]
+name = "vem-case"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Case database, ingest pipeline, verification and exports for vem"
+
+[dependencies]
+vem-core = { path = "../vem-core" }
+vem-adapters = { path = "../vem-adapters" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+walkdir.workspace = true
+arrow.workspace = true
+parquet.workspace = true
+csv.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

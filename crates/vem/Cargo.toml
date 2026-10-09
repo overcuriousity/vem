@@ -1,0 +1,22 @@
+[package]
+name = "vem"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Vestigia Ex Machina: forensic analysis of agentic AI harness traces"
+
+[[bin]]
+name = "vem"
+path = "src/main.rs"
+
+[dependencies]
+vem-core = { path = "../vem-core" }
+vem-case = { path = "../vem-case" }
+clap.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true

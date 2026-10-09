@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/vem-core", "crates/vem-adapters", "crates/vem-case", "crates/vem"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.85"
+repository = "https://github.com/overcuriousity/vem"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+walkdir = "2"
+rusqlite = { version = "0.40", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
+arrow = "60"
+parquet = "60"
+csv = "1"
+tempfile = "3"
+insta = { version = "1", features = ["json"] }
+proptest = "1"
+assert_cmd = "2"
+predicates = "3"
