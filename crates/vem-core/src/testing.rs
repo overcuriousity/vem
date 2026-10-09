@@ -47,6 +47,9 @@ impl ParseSink for VecSink {
     fn find_source_file(&self, _rel_path: &std::path::Path) -> Option<SourceFileHandle> {
         None
     }
+    fn find_unparsed_transcript(&self, _harness_session_id: &str) -> Option<SourceFileHandle> {
+        None
+    }
     fn message(&mut self, session: SessionHandle, draft: MessageDraft) -> MessageHandle {
         let h = MessageHandle(self.messages.len() as i64 + 1);
         self.messages.push((session, h, draft));

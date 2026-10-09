@@ -24,7 +24,8 @@ fn epoch_ms(v: Option<&Value>) -> Timestamp {
 }
 
 /// Each `history.jsonl` line is one submitted prompt: `display`, `pastedContents`, `timestamp` (ms), `project`, `sessionId`.
-/// Pasted content becomes a `paste_detected` observation. A session id with no transcript is deletion evidence:
+/// Pasted content becomes a `paste_detected` observation. A session id whose transcript is in the manifest
+/// but not parsed yet fails the file, so it is retried after the transcript. A session id with no transcript is deletion evidence:
 /// it gets a `sidecar_only` session holding one `user` message per history line (so no prompt or paste is
 /// lost), and one `missing_transcript` anomaly linked to that session.
 pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError> {
@@ -87,6 +88,11 @@ pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<
             None => match sink.find_session(&session_id) {
                 Some(h) => h,
                 None => {
+                    if sink.find_unparsed_transcript(&session_id).is_some() {
+                        // The transcript is in the manifest but has not been parsed (it failed, or comes later);
+                        // it is not deletion evidence. Fail so history.jsonl is retried after the transcript.
+                        return Err(ParseError::Invalid(format!("transcript of session {session_id} has not been parsed yet")));
+                    }
                     let h = sink.session(SessionDraft {
                         harness_session_id: session_id.clone(),
                         kind: SessionKind::SidecarOnly,

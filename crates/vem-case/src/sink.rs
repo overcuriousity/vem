@@ -213,6 +213,28 @@ impl<'a> ParseSink for DbSink<'a> {
             .flatten()
             .map(SourceFileHandle)
     }
+    fn find_unparsed_transcript(&self, harness_session_id: &str) -> Option<SourceFileHandle> {
+        let want = format!("{harness_session_id}.jsonl");
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, rel_path FROM source_files f WHERE root_id = ?1 AND kind = 'file' AND rel_path LIKE 'projects/%'
+                   AND parse_status IN ('unparsed', 'failed')
+                   AND version = (SELECT MAX(version) FROM source_files g WHERE g.root_id = f.root_id AND g.rel_path = f.rel_path AND g.rel_path_encoded = f.rel_path_encoded)
+                 ORDER BY id",
+            )
+            .ok()?;
+        let rows = stmt.query_map(params![self.root_id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).ok()?;
+        // Filter in Rust: the session id comes from evidence and may hold LIKE/GLOB metacharacters.
+        let found = rows
+            .filter_map(Result::ok)
+            .find(|(_, rel)| {
+                let parts: Vec<&str> = rel.split('/').collect();
+                parts.len() == 3 && parts[0] == "projects" && parts[2] == want
+            })
+            .map(|(id, _)| SourceFileHandle(id));
+        found
+    }
     fn message(&mut self, session: SessionHandle, draft: MessageDraft) -> MessageHandle {
         let r = self.try_message(session, &draft);
         let id = self.fail(r);

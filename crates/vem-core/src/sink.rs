@@ -12,6 +12,10 @@ pub trait ParseSink {
     /// Looks a file up in this root's manifest by its path relative to the root (latest version).
     /// `None` when the manifest does not list it (or, in tests, when there is no manifest).
     fn find_source_file(&self, rel_path: &Path) -> Option<SourceFileHandle>;
+    /// Looks up a main transcript `projects/<dir>/<harness_session_id>.jsonl` anywhere in this root's
+    /// manifest (latest version) that has not been parsed yet (`unparsed` or `failed`).
+    /// `None` when there is no such file (or, in tests, when there is no manifest).
+    fn find_unparsed_transcript(&self, harness_session_id: &str) -> Option<SourceFileHandle>;
     fn message(&mut self, session: SessionHandle, draft: MessageDraft) -> MessageHandle;
     fn tool_call(&mut self, session: SessionHandle, draft: ToolCallDraft) -> ToolCallHandle;
     fn observation(&mut self, session: SessionHandle, draft: ObservationDraft);

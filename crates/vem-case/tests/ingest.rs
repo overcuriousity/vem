@@ -219,3 +219,30 @@ fn an_unavailable_root_fails_cleanly_and_is_retried_when_it_returns() {
     assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 5);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 23);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_transcript_retried_after_a_failure_leaves_no_ghost_sidecar_session() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_tmp, mut case, ev) = attach_copy(false);
+    let s1 = "0f0f0f0f-0000-4000-8000-000000000001";
+    let transcript = ev.join(format!("projects/-home-alice-proj/{s1}.jsonl"));
+    std::fs::set_permissions(&transcript, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let first = ingest(&mut case, None).unwrap();
+    std::fs::set_permissions(&transcript, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(first.files_failed >= 2, "the transcript and history.jsonl (NB-1)");
+    assert_eq!(count(&case, "SELECT parse_status = 'failed' FROM source_files WHERE rel_path = 'history.jsonl'"), 1, "history waits for the transcript");
+    let second = ingest(&mut case, None).unwrap();
+    assert_eq!(second.files_failed, 0);
+    let ghost = format!("SELECT COUNT(*) FROM sessions WHERE harness_session_id = '{s1}' AND kind = 'sidecar_only'");
+    assert_eq!(count(&case, &ghost), 0, "no ghost sidecar_only session");
+    assert_eq!(count(&case, &format!("SELECT COUNT(*) FROM anomalies WHERE kind = 'missing_transcript' AND details LIKE '%{s1}%'")), 0);
+    assert_eq!(count(&case, &format!("SELECT COUNT(*) FROM sessions WHERE harness_session_id = '{s1}'")), 1);
+    let real = session_id(&case, s1);
+    let kind: String = case.conn.query_row("SELECT kind FROM sessions WHERE id = ?1", [real], |r| r.get(0)).unwrap();
+    // The transcript parser makes it `primary`; linking relabels it `resumed` exactly as in a clean ingest,
+    // because S1 carries S0's session id on one record (see links_subagents_resumptions_and_claims).
+    assert_eq!(kind, "resumed", "the real transcript session keeps its clean-ingest kind");
+    assert_eq!(count(&case, "SELECT parent_session_id FROM sessions WHERE kind = 'subagent'"), real, "the subagent's parent is the real session");
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions WHERE kind = 'sidecar_only'"), 1, "only the genuinely deleted session");
+}
