@@ -115,8 +115,8 @@ Thin core, typed derived layer, everything pointing back to bytes.
 
 ```
 Case          id, name, examiner, created_at, notes
-EvidenceRoot  id, case_id, path, label, host, user, os, root_kind, attached_at
-Store         id, root_id, harness {ClaudeCode|Codex|Cursor}, kind (string, e.g.
+EvidenceRoot  id, case_id, path, label, host, user, os, harness, attached_at
+Store         id, root_id, harness {ClaudeCode|Codex|Cursor|CursorIde}, kind (string, e.g.
               claude:projects, claude:file-history, codex:sessions, codex:archived,
               cursor:agent-transcripts, cursor:state-vscdb, cursor:chat-store,
               cursor:ai-tracking, cursor:local-history), generation, path,
