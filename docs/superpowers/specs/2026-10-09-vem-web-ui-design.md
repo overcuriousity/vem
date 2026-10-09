@@ -60,9 +60,10 @@ frontend/ (Vite build) ──embedded by rust-embed──▶ vem-web
 - `export/mod.rs`: `run(case, format, scope, out_path) -> ExportReport { format, output, events, sha256 }`,
   moved from `crates/vem/src/commands.rs`; the CLI and server both call it; it checks scope and output
   path, refuses an empty scope, hashes, audits.
-- `diff.rs`: `diff_blobs(case, before: Option<&str>, after: Option<&str>) -> DiffResult { binary: bool,
+- `diff.rs`: `diff_bytes(old: &[u8], new: &[u8]) -> DiffResult { binary: bool,
   hunks: Vec<Hunk { old_start, old_lines, new_start, new_lines, lines: Vec<Line { tag: Equal|Insert|Delete,
-  old_no, new_no, text }> }> }`. An absent side is empty (creation or deletion). Content is binary when it
+  old_no, new_no, text }> }> }`; the `/api/diff` route reads the two blobs with `query::blob_bytes`
+  and calls it. An absent side is empty (creation or deletion). Content is binary when it
   contains a NUL byte in its first 8 KiB or is not valid UTF-8. Context: 3 lines.
 - `secrets.rs`: the secret-candidate rule set (§5.3).
 
@@ -156,8 +157,8 @@ Test sinks implement it from an in-memory map.
   confidence High, timestamp = file mtime (`file_mtime` origin). Unknown session id: as for history, a
   `sidecar_only` session plus `missing_transcript`; if the transcript is in the manifest but unparsed,
   the file fails and is retried.
-- Discovery adds `claude:paste-cache` and `claude:uploads` to the parsed store kinds (they are
-  currently inventoried only).
+- `claude:uploads` becomes a parsed store kind. `claude:paste-cache` stays inventoried: its files are
+  read through `history.jsonl` references.
 
 ### 5.3 Secret candidates
 
