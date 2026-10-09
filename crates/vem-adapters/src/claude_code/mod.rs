@@ -6,7 +6,7 @@ pub mod tools;
 pub mod transcript;
 
 use std::path::Path;
-use vem_core::adapter::{Discovery, FileContext, HarnessAdapter, Identification, ParseError};
+use vem_core::adapter::{Discovery, FileContext, HarnessAdapter, Identification, ParseError, ParseOutcome};
 use vem_core::model::Harness;
 use vem_core::sink::ParseSink;
 
@@ -42,17 +42,19 @@ impl HarnessAdapter for ClaudeCodeAdapter {
         discover::discover(root)
     }
 
-    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<(), ParseError> {
+    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError> {
         match ctx.store.kind.as_str() {
             STORE_PROJECTS => {
                 if transcript::classify_path(ctx.rel_path).is_some() {
                     transcript::parse_transcript(ctx, sink)
+                } else if transcript::is_subagent_meta(ctx.rel_path) {
+                    transcript::parse_subagent_meta(ctx, sink)
                 } else {
-                    Ok(()) // meta.json and tool-results/*.txt are inventoried and retained, not parsed
+                    Ok(ParseOutcome::NotParsed) // tool-results/*.txt are inventoried and retained, not parsed
                 }
             }
             STORE_HISTORY => sidecars::parse_history(ctx, sink),
-            _ => Ok(()),
+            _ => Ok(ParseOutcome::NotParsed),
         }
     }
 }

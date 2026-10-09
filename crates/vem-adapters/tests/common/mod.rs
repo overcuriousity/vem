@@ -14,10 +14,16 @@ pub const S0: &str = "0f0f0f0f-0000-4000-8000-000000000000";
 pub const S1_FILE: &str = "projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001.jsonl";
 pub const S0_FILE: &str = "projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000000.jsonl";
 pub const SUB_FILE: &str = "projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001/subagents/agent-0123456789abcdef.jsonl";
+pub const SUB_META_FILE: &str = "projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001/subagents/agent-0123456789abcdef.meta.json";
 pub const ORPHAN_FILE: &str = "projects/-home-alice-proj/22222222-0000-4000-8000-000000000002.jsonl.orphaned-1759221000000";
 
-/// Parses one file of `root` into a fresh `VecSink`, giving it source-file handle 1.
+/// Parses one file of `root` into `sink`, giving it source-file handle 1.
 pub fn parse_file_into(root: &Path, rel: &str, sink: &mut VecSink) {
+    parse_file_with_handle(root, rel, SourceFileHandle(1), sink);
+}
+
+/// Parses one file of `root` into `sink` as source file `handle`.
+pub fn parse_file_with_handle(root: &Path, rel: &str, handle: SourceFileHandle, sink: &mut VecSink) {
     let adapter = ClaudeCodeAdapter;
     let discovery = adapter.discover(root);
     let rel_path = PathBuf::from(rel);
@@ -28,7 +34,7 @@ pub fn parse_file_into(root: &Path, rel: &str, sink: &mut VecSink) {
         .unwrap_or_else(|| panic!("no store claims {rel}"));
     let abs_path = root.join(&rel_path);
     let mtime = std::fs::metadata(&abs_path).and_then(|m| m.modified()).ok();
-    let ctx = FileContext { root, store, rel_path: &rel_path, abs_path, handle: SourceFileHandle(1), mtime };
+    let ctx = FileContext { root, store, rel_path: &rel_path, abs_path, handle, mtime };
     adapter.parse_file(&ctx, sink).expect("parse ok");
 }
 

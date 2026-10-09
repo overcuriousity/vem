@@ -70,6 +70,10 @@ fn truncated_final_line_is_an_anomaly_with_offset() {
     assert_eq!(a[0].severity, Severity::Warning);
     assert_eq!(a[0].source_file, Some(SourceFileHandle(1)));
     assert!(a[0].byte_offset.unwrap() > 0);
+    let prov = a[0].provenance.as_ref().expect("record-level anomaly carries provenance");
+    assert_eq!(Some(prov.byte_offset), a[0].byte_offset);
+    let raw = std::fs::read(fixture_root().join(S1_FILE)).unwrap();
+    assert_eq!(sha256_hex(&raw[prov.byte_offset as usize..(prov.byte_offset + prov.byte_length) as usize]), prov.content_sha256);
     assert!(sink.anomalies_of(AnomalyKind::MalformedRecord).is_empty());
 }
 
@@ -174,4 +178,90 @@ fn odd_content_shapes_never_panic() {
     assert_eq!(sink.messages[2].2.blocks[0].kind, BlockKind::Other);
     assert_eq!(sink.messages[2].2.role, Role::User);
     assert_eq!(sink.messages[3].2.role, Role::Assistant);
+}
+
+#[test]
+fn invalid_utf8_record_is_decoded_lossily_not_lost() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("projects/-p")).unwrap();
+    let rel = "projects/-p/99999999-0000-4000-8000-000000000099.jsonl";
+    let mut line = br#"{"type":"user","message":{"role":"user","content":"caf"#.to_vec();
+    line.push(0xe9); // Latin-1 e-acute: not valid UTF-8
+    line.extend_from_slice(br#""},"uuid":"i1","timestamp":"2026-09-30T10:00:00Z","sessionId":"99999999-0000-4000-8000-000000000099"}"#);
+    line.push(b'\n');
+    std::fs::write(tmp.path().join(rel), &line).unwrap();
+    let mut sink = VecSink::default();
+    parse_file_into(tmp.path(), rel, &mut sink);
+    assert_eq!(sink.messages.len(), 1, "the message is kept");
+    let m = &sink.messages[0].2;
+    assert_eq!(m.blocks[0].text.as_deref(), Some("caf\u{FFFD}"));
+    assert_eq!(m.provenance.content_sha256, sha256_hex(&line[..line.len() - 1]), "hash is on the original bytes");
+    assert!(sink.anomalies_of(AnomalyKind::MalformedRecord).is_empty());
+    let a = sink.anomalies_of(AnomalyKind::InvalidUtf8);
+    assert_eq!(a.len(), 1);
+    assert_eq!(a[0].severity, Severity::Info);
+}
+
+/// A transcript whose `file-history-delta` names `backup` for the session's backup file.
+fn root_with_delta(backup: &str) -> (tempfile::TempDir, String, String) {
+    let sid = "fefefefe-0000-4000-8000-0000000000fe";
+    let delta = serde_json::json!({
+        "type": "file-history-delta", "trackingPath": "notes.md", "messageId": "m1", "timestamp": "2026-09-30T10:00:00Z",
+        "backup": { "backupFileName": backup, "realParentDir": "/home/x", "version": 1 },
+        "sessionId": sid,
+    });
+    let (tmp, rel) = temp_root_with_transcript(sid, &[&delta.to_string()], true);
+    std::fs::create_dir_all(tmp.path().join("file-history").join(sid)).unwrap();
+    (tmp, rel, sid.to_string())
+}
+
+#[test]
+fn backup_names_that_leave_the_session_directory_are_not_read() {
+    let outside = tempfile::tempdir().unwrap();
+    let secret = outside.path().join("secret.txt");
+    std::fs::write(&secret, "examiner workstation secret").unwrap();
+    let secret_sha = sha256_hex(b"examiner workstation secret");
+
+    let traversal = format!("../../../{}", "secret.txt");
+    let absolute = secret.to_string_lossy().to_string();
+    for name in [traversal.as_str(), absolute.as_str(), "..", "a\\..\\b"] {
+        let (tmp, rel, _) = root_with_delta(name);
+        // Make the traversal resolve to the secret if it were followed.
+        std::fs::copy(&secret, tmp.path().join("secret.txt")).unwrap();
+        let mut sink = VecSink::default();
+        parse_file_into(tmp.path(), &rel, &mut sink);
+        let obs = sink.observations_of(ObservationKind::FileEdited);
+        assert_eq!(obs.len(), 1, "{name}: the observation is kept");
+        assert_eq!(obs[0].before_blob, None, "{name}: no before-content");
+        assert!(!sink.blobs.contains_key(&secret_sha), "{name}: the secret was read");
+        let a = sink.anomalies_of(AnomalyKind::SuspiciousPath);
+        assert_eq!(a.len(), 1, "{name}");
+        assert_eq!(a[0].severity, Severity::Warning);
+        assert!(a[0].provenance.is_some());
+    }
+
+    #[cfg(unix)]
+    {
+        let (tmp, rel, sid) = root_with_delta("linked@v1");
+        std::os::unix::fs::symlink(&secret, tmp.path().join("file-history").join(&sid).join("linked@v1")).unwrap();
+        let mut sink = VecSink::default();
+        parse_file_into(tmp.path(), &rel, &mut sink);
+        assert_eq!(sink.observations_of(ObservationKind::FileEdited)[0].before_blob, None);
+        assert!(!sink.blobs.contains_key(&secret_sha), "a symlinked backup is not followed");
+        assert_eq!(sink.anomalies_of(AnomalyKind::SuspiciousPath).len(), 1);
+    }
+
+    // A plain name that simply was not collected is not suspicious.
+    let (tmp, rel, _) = root_with_delta("deadbeef@v9");
+    let mut sink = VecSink::default();
+    parse_file_into(tmp.path(), &rel, &mut sink);
+    assert!(sink.anomalies_of(AnomalyKind::SuspiciousPath).is_empty());
+}
+
+#[test]
+fn backup_path_keeps_the_evidence_separator() {
+    use vem_adapters::claude_code::transcript::join_evidence_path;
+    assert_eq!(join_evidence_path("C:\\proj", "src\\a.rs"), "C:\\proj\\a.rs");
+    assert_eq!(join_evidence_path("/home/alice/proj/", "notes.md"), "/home/alice/proj/notes.md");
+    assert_eq!(join_evidence_path("/home/alice/proj", "sub/notes.md"), "/home/alice/proj/notes.md");
 }

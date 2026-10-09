@@ -3,12 +3,13 @@
 use super::discover::is_transcript_name;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeSet, HashMap};
+use std::borrow::Cow;
 use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-use vem_core::adapter::{FileContext, ParseError};
+use std::io::{BufReader, Read};
+use std::path::{Component, Path};
+use vem_core::adapter::{FileContext, ParseError, ParseOutcome};
 use vem_core::hash::sha256_hex;
-use vem_core::jsonl::{JsonlReader, RawRecord};
+use vem_core::jsonl::{JsonlReader, RawRecord, DEFAULT_MAX_LEN};
 use vem_core::model::*;
 use vem_core::sink::ParseSink;
 
@@ -130,15 +131,17 @@ pub(crate) struct TranscriptState<'a> {
 }
 
 impl<'a> TranscriptState<'a> {
-    fn anomaly(&self, sink: &mut dyn ParseSink, kind: AnomalyKind, severity: Severity, offset: Option<u64>, message: String, details: Value) {
+    /// A record-level anomaly about the record at `at`, or a file-level one when `at` is `None`.
+    fn anomaly(&self, sink: &mut dyn ParseSink, kind: AnomalyKind, severity: Severity, at: Option<&Provenance>, message: String, details: Value) {
         sink.anomaly(AnomalyDraft {
             kind,
             severity,
             source_file: Some(self.handle),
             session: Some(self.session),
-            byte_offset: offset,
+            byte_offset: at.map(|p| p.byte_offset),
             message,
             details,
+            provenance: at.cloned(),
         });
     }
 
@@ -184,7 +187,7 @@ impl<'a> TranscriptState<'a> {
                         sink,
                         AnomalyKind::MissingTimestamp,
                         Severity::Warning,
-                        Some(prov.byte_offset),
+                        Some(prov),
                         match raw {
                             Some(r) => format!("conversation record has unparseable timestamp {r:?}"),
                             None => "conversation record has no timestamp".to_string(),
@@ -235,7 +238,7 @@ impl<'a> TranscriptState<'a> {
                     sink,
                     AnomalyKind::UnknownRecordType,
                     Severity::Info,
-                    Some(prov.byte_offset),
+                    Some(&prov),
                     format!("unknown record type {other:?} kept as meta message"),
                     json!({ "record_type": other }),
                 );
@@ -320,23 +323,37 @@ impl<'a> TranscriptState<'a> {
 
     /// A `file-history-delta` records that the harness backed up `trackingPath` before changing it.
     /// The backup lives at `file-history/<session>/<backupFileName>`; when present it is the before-content.
+    /// `backupFileName` is evidence data, so it must be one plain file name and the backup must be a regular
+    /// file strictly inside that directory (no `..`, no separators, no absolute path, no symbolic link);
+    /// anything else is a `suspicious_path` anomaly and the backup is not read.
     pub fn file_history_delta(&mut self, v: &Value, prov: &Provenance, sink: &mut dyn ParseSink) {
         let tracking = str_field(v, "trackingPath");
         let backup = v.get("backup").cloned().unwrap_or(Value::Null);
         let backup_name = str_field(&backup, "backupFileName");
         let real_parent = str_field(&backup, "realParentDir");
         let path = match (&real_parent, &tracking) {
-            (Some(dir), Some(t)) => {
-                let base = Path::new(t).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| t.clone());
-                Some(format!("{}/{}", dir.trim_end_matches('/'), base))
-            }
+            (Some(dir), Some(t)) => Some(join_evidence_path(dir, t)),
             (None, Some(t)) => Some(t.clone()),
             _ => None,
         };
-        let before_blob = backup_name.as_ref().and_then(|name| {
-            let p = self.root.join("file-history").join(&self.session_id).join(name);
-            std::fs::read(p).ok().map(|bytes| sink.blob(&bytes))
-        });
+        let before_blob = match &backup_name {
+            None => None,
+            Some(name) => match read_backup(self.root, &self.session_id, name) {
+                Ok(Some(bytes)) => Some(sink.blob(&bytes)),
+                Ok(None) => None,
+                Err((kind, reason)) => {
+                    self.anomaly(
+                        sink,
+                        kind,
+                        Severity::Warning,
+                        Some(prov),
+                        format!("file-history backup {name:?} was not read: {reason}"),
+                        json!({ "backupFileName": name, "reason": reason }),
+                    );
+                    None
+                }
+            },
+        };
         let timestamp = v
             .get("timestamp")
             .and_then(Value::as_str)
@@ -381,9 +398,10 @@ impl<'a> TranscriptState<'a> {
     }
 }
 
-pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<(), ParseError> {
+pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError> {
     let path = classify_path(ctx.rel_path)
         .ok_or_else(|| ParseError::Invalid(format!("not a transcript path: {}", ctx.rel_path.display())))?;
+    let file = File::open(&ctx.abs_path)?;
     let session = sink.session(SessionDraft {
         harness_session_id: path.session_id.clone(),
         kind: if path.is_subagent { SessionKind::Subagent } else { SessionKind::Primary },
@@ -416,26 +434,38 @@ pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Resu
         };
         state.anomaly(sink, kind, Severity::Info, None, format!("transcript {file_name} was {what}; parsed anyway"), json!({ "file_name": file_name }));
     }
-    if path.is_subagent {
-        read_subagent_meta(&mut state, &ctx.abs_path, sink);
-    }
-    let file = File::open(&ctx.abs_path)?;
     let reader = JsonlReader::new(BufReader::new(file));
+    let mut records = 0u64;
     for rec in reader {
         let rec = rec?;
-        let prov = provenance(ctx.handle, &rec);
+        records += 1;
         if rec.oversized {
-            state.anomaly(
-                sink,
-                AnomalyKind::OversizedRecord,
-                Severity::Warning,
-                Some(rec.offset),
-                format!("record of {} bytes exceeds the size cap and was skipped", rec.length),
-                json!({ "length": rec.length }),
-            );
+            // The record's bytes were not buffered past the cap, so there is no record hash to cite.
+            sink.anomaly(AnomalyDraft {
+                kind: AnomalyKind::OversizedRecord,
+                severity: Severity::Warning,
+                source_file: Some(ctx.handle),
+                session: Some(state.session),
+                byte_offset: Some(rec.offset),
+                message: format!("record of {} bytes exceeds the size cap and was skipped", rec.length),
+                details: json!({ "length": rec.length }),
+                provenance: None,
+            });
             continue;
         }
-        match serde_json::from_slice::<Value>(&rec.bytes) {
+        let prov = provenance(ctx.handle, &rec);
+        let (text, lossy) = decode_record(&rec.bytes);
+        if lossy {
+            state.anomaly(
+                sink,
+                AnomalyKind::InvalidUtf8,
+                Severity::Info,
+                Some(&prov),
+                format!("line {} is not valid UTF-8; decoded lossily (hashes and offsets are on the original bytes)", rec.index),
+                json!({ "length": rec.length }),
+            );
+        }
+        match serde_json::from_str::<Value>(&text) {
             Ok(v) => state.record(v, prov, sink),
             Err(e) => {
                 let (kind, severity, msg) = if rec.terminated {
@@ -443,37 +473,171 @@ pub fn parse_transcript(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Resu
                 } else {
                     (AnomalyKind::TruncatedLine, Severity::Warning, format!("final line {} is truncated (no newline, not valid JSON): {e}", rec.index))
                 };
-                state.anomaly(sink, kind, severity, Some(rec.offset), msg, json!({ "length": rec.length, "terminated": rec.terminated }));
+                state.anomaly(sink, kind, severity, Some(&prov), msg, json!({ "length": rec.length, "terminated": rec.terminated }));
             }
         }
     }
     state.finish(sink);
-    Ok(())
+    Ok(ParseOutcome::Parsed { records })
 }
 
-/// `agent-<id>.meta.json` next to a subagent transcript: title from `description`, claim on `toolUseId`.
-fn read_subagent_meta(state: &mut TranscriptState<'_>, abs_path: &Path, sink: &mut dyn ParseSink) {
-    let meta_path = abs_path.with_extension("meta.json");
-    let Ok(bytes) = std::fs::read(&meta_path) else { return };
-    let Ok(meta) = serde_json::from_slice::<Value>(&bytes) else {
-        state.anomaly(sink, AnomalyKind::MalformedRecord, Severity::Warning, None, format!("subagent meta file {} is not valid JSON", meta_path.display()), json!({}));
-        return;
+pub const META_PARSER_NAME: &str = "claude_code.subagent_meta";
+pub const META_PARSER_VERSION: &str = "1";
+
+/// `projects/<cwd>/<session>/subagents/agent-<id>.meta.json`.
+pub fn is_subagent_meta(rel: &Path) -> bool {
+    let name = rel.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let parent = rel.parent().and_then(Path::file_name).and_then(|n| n.to_str()).unwrap_or("");
+    name.ends_with(".meta.json") && parent == "subagents"
+}
+
+/// Text of a record for JSON parsing. Invalid UTF-8 is decoded lossily (spec §10); the flag says so.
+pub fn decode_record(bytes: &[u8]) -> (Cow<'_, str>, bool) {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => (Cow::Borrowed(s), false),
+        Err(_) => (String::from_utf8_lossy(bytes), true),
+    }
+}
+
+/// Reads at most `cap` bytes of `path`; `Ok(None)` when the file is larger than `cap`.
+pub fn read_capped(path: &Path, cap: u64) -> std::io::Result<Option<Vec<u8>>> {
+    let mut buf = Vec::new();
+    File::open(path)?.take(cap + 1).read_to_end(&mut buf)?;
+    Ok(if buf.len() as u64 > cap { None } else { Some(buf) })
+}
+
+/// `realParentDir` + the base name of `trackingPath`, splitting on both separators because the
+/// evidence may come from Windows, and joining with the separator the evidence uses.
+pub fn join_evidence_path(dir: &str, tracking: &str) -> String {
+    let base = tracking.rsplit(['/', '\\']).next().filter(|b| !b.is_empty()).unwrap_or(tracking);
+    let sep = if dir.contains('\\') && !dir.contains('/') { '\\' } else { '/' };
+    format!("{}{}{}", dir.trim_end_matches(['/', '\\']), sep, base)
+}
+
+/// Why a name taken from evidence data cannot be used as one path component, if it cannot.
+fn unsafe_component(name: &str) -> Option<&'static str> {
+    if name.is_empty() {
+        return Some("empty name");
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Some("contains a path separator");
+    }
+    if name.contains('\0') {
+        return Some("contains a NUL byte");
+    }
+    let mut comps = Path::new(name).components();
+    match (comps.next(), comps.next()) {
+        (Some(Component::Normal(_)), None) => None,
+        _ => Some("is not a single plain file name (e.g. `.`, `..` or a root)"),
+    }
+}
+
+/// The backup `file-history/<session>/<name>` under `root`, read without following symbolic links.
+/// `Ok(None)` when it simply was not collected.
+fn read_backup(root: &Path, session_id: &str, name: &str) -> Result<Option<Vec<u8>>, (AnomalyKind, String)> {
+    let suspicious = |r: &str| (AnomalyKind::SuspiciousPath, r.to_string());
+    if let Some(r) = unsafe_component(name) {
+        return Err(suspicious(&format!("backupFileName {r}")));
+    }
+    if let Some(r) = unsafe_component(session_id) {
+        return Err(suspicious(&format!("session id {r}")));
+    }
+    let dir = root.join("file-history");
+    let session_dir = dir.join(session_id);
+    for d in [&dir, &session_dir] {
+        match std::fs::symlink_metadata(d) {
+            Err(_) => return Ok(None),
+            Ok(m) if m.file_type().is_symlink() => return Err(suspicious(&format!("{} is a symbolic link", d.display()))),
+            Ok(m) if !m.is_dir() => return Ok(None),
+            Ok(_) => {}
+        }
+    }
+    let file = session_dir.join(name);
+    match std::fs::symlink_metadata(&file) {
+        Err(_) => Ok(None),
+        Ok(m) if m.file_type().is_symlink() => Err(suspicious("the backup is a symbolic link")),
+        Ok(m) if !m.is_file() => Err(suspicious("the backup is not a regular file")),
+        Ok(_) => match read_capped(&file, DEFAULT_MAX_LEN as u64) {
+            Ok(Some(bytes)) => Ok(Some(bytes)),
+            Ok(None) => Err((AnomalyKind::OversizedRecord, "the backup exceeds the size cap".to_string())),
+            Err(_) => Ok(None),
+        },
+    }
+}
+
+/// `agent-<id>.meta.json` next to a subagent transcript, parsed as its own source file so its provenance
+/// is its own bytes: title from `description`, claim on `toolUseId`, the document kept as a meta message.
+/// Ingest order (`agent-<id>.jsonl` sorts before `agent-<id>.meta.json`) means the session already exists.
+pub fn parse_subagent_meta(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError> {
+    let name = ctx.rel_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+    let session_id = name.strip_suffix(".meta.json").unwrap_or(&name).to_string();
+    let Some(bytes) = read_capped(&ctx.abs_path, DEFAULT_MAX_LEN as u64)? else {
+        sink.anomaly(AnomalyDraft {
+            kind: AnomalyKind::OversizedRecord,
+            severity: Severity::Warning,
+            source_file: Some(ctx.handle),
+            session: sink.find_session(&session_id),
+            byte_offset: Some(0),
+            message: format!("subagent meta file {name} exceeds the size cap and was skipped"),
+            details: json!({}),
+            provenance: None,
+        });
+        return Ok(ParseOutcome::Parsed { records: 0 });
+    };
+    let prov = Provenance {
+        source_file: ctx.handle,
+        byte_offset: 0,
+        byte_length: bytes.len() as u64,
+        record_index: 0,
+        content_sha256: sha256_hex(&bytes),
+        parser_name: META_PARSER_NAME.to_string(),
+        parser_version: META_PARSER_VERSION.to_string(),
+        origin: ProvOrigin::Stored,
+    };
+    let session = sink.find_session(&session_id);
+    let anomaly = |sink: &mut dyn ParseSink, kind, severity, message: String, details: Value| {
+        sink.anomaly(AnomalyDraft { kind, severity, source_file: Some(ctx.handle), session, byte_offset: Some(0), message, details, provenance: Some(prov.clone()) })
+    };
+    let (text, lossy) = decode_record(&bytes);
+    if lossy {
+        anomaly(sink, AnomalyKind::InvalidUtf8, Severity::Info, format!("subagent meta file {name} is not valid UTF-8; decoded lossily"), json!({}));
+    }
+    let meta = match serde_json::from_str::<Value>(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            anomaly(sink, AnomalyKind::MalformedRecord, Severity::Warning, format!("subagent meta file {name} is not valid JSON: {e}"), json!({}));
+            return Ok(ParseOutcome::Parsed { records: 1 });
+        }
+    };
+    let Some(session) = session else {
+        let transcript = ctx.rel_path.with_file_name(format!("{session_id}.jsonl"));
+        if sink.find_source_file(&transcript).is_some() {
+            // The transcript is in the manifest but has not been parsed (it failed); retry on the next ingest.
+            return Err(ParseError::Invalid(format!("subagent transcript {} has not been parsed yet", transcript.display())));
+        }
+        anomaly(
+            sink,
+            AnomalyKind::MissingTranscript,
+            Severity::Warning,
+            format!("subagent meta file {name} has no transcript in this root"),
+            json!({ "sessionId": session_id, "subagent_meta": meta }),
+        );
+        return Ok(ParseOutcome::Parsed { records: 1 });
     };
     let title = str_field(&meta, "description");
     if title.is_some() {
-        sink.update_session(state.session, SessionUpdate { title, ..Default::default() });
+        sink.update_session(session, SessionUpdate { title, ..Default::default() });
     }
     if let Some(tool_use_id) = str_field(&meta, "toolUseId") {
         sink.identity_claim(
-            state.session,
-            IdentityClaimDraft { scheme: "claude:spawning_tool_use_id".to_string(), claimed_id: tool_use_id, source_file: state.handle, join_status: JoinStatus::Unmatched },
+            session,
+            IdentityClaimDraft { scheme: "claude:spawning_tool_use_id".to_string(), claimed_id: tool_use_id, source_file: ctx.handle, join_status: JoinStatus::Unmatched },
         );
     }
     let mut attrs = Map::new();
     attrs.insert("subagent_meta".to_string(), meta);
-    // The meta file content is kept on the session through a meta message with inferred provenance.
     sink.message(
-        state.session,
+        session,
         MessageDraft {
             harness_record_type: "subagent-meta".to_string(),
             harness_uuid: None,
@@ -483,16 +647,8 @@ fn read_subagent_meta(state: &mut TranscriptState<'_>, abs_path: &Path, sink: &m
             model: None,
             attributes: attrs,
             blocks: Vec::new(),
-            provenance: Provenance {
-                source_file: state.handle,
-                byte_offset: 0,
-                byte_length: 0,
-                record_index: 0,
-                content_sha256: sha256_hex(&bytes),
-                parser_name: PARSER_NAME.to_string(),
-                parser_version: PARSER_VERSION.to_string(),
-                origin: ProvOrigin::Derived,
-            },
+            provenance: prov,
         },
     );
+    Ok(ParseOutcome::Parsed { records: 1 })
 }

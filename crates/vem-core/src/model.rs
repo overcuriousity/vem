@@ -29,7 +29,8 @@ str_enum!(BlockKind { Text = "text", Thinking = "thinking", ToolUse = "tool_use"
 str_enum!(ToolCategory { Shell = "shell", FileRead = "file_read", FileWrite = "file_write", FileEdit = "file_edit", Search = "search", Web = "web", Agent = "agent", Mcp = "mcp", Other = "other" });
 str_enum!(ObservationKind { CommandExecuted = "command_executed", FileRead = "file_read", FileWritten = "file_written", FileEdited = "file_edited", FileDeleted = "file_deleted", SubagentSpawned = "subagent_spawned", UrlReferenced = "url_referenced", SecretCandidate = "secret_candidate", PasteDetected = "paste_detected", UploadDetected = "upload_detected" });
 str_enum!(Confidence { High = "high", Medium = "medium", Low = "low" });
-str_enum!(SessionKind { Primary = "primary", Subagent = "subagent", Resumed = "resumed", Forked = "forked" });
+str_enum!(/// `SidecarOnly`: a session known only from a sidecar (e.g. `history.jsonl`) whose transcript is gone.
+    SessionKind { Primary = "primary", Subagent = "subagent", Resumed = "resumed", Forked = "forked", SidecarOnly = "sidecar_only" });
 str_enum!(JoinStatus { Matched = "matched", Unmatched = "unmatched", Ambiguous = "ambiguous" });
 str_enum!(AnomalyKind {
     TruncatedLine = "truncated_line", MalformedRecord = "malformed_record", UnknownRecordType = "unknown_record_type",
@@ -37,6 +38,7 @@ str_enum!(AnomalyKind {
     SupersededFile = "superseded_file", ArchivedSession = "archived_session", UnlinkedSubagent = "unlinked_subagent",
     FolderDateClockMismatch = "folder_date_clock_mismatch", HashDrift = "hash_drift", EmptyStore = "empty_store",
     OversizedRecord = "oversized_record", UnpairedToolResult = "unpaired_tool_result", MissingTranscript = "missing_transcript",
+    SuspiciousPath = "suspicious_path", NonUtf8Path = "non_utf8_path", SymlinkInEvidence = "symlink_in_evidence", InvalidUtf8 = "invalid_utf8",
 });
 str_enum!(Severity { Info = "info", Warning = "warning", Error = "error" });
 str_enum!(ProvOrigin { Stored = "stored", Derived = "derived", Inferred = "inferred" });
@@ -210,6 +212,9 @@ pub struct AnomalyDraft {
     pub byte_offset: Option<u64>,
     pub message: String,
     pub details: Value,
+    /// The record the anomaly is about. Every record-level anomaly carries it (spec §5); file-level
+    /// anomalies (orphaned file, oversized record whose bytes were not buffered) leave it `None`.
+    pub provenance: Option<Provenance>,
 }
 
 #[cfg(test)]

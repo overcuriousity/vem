@@ -1,6 +1,7 @@
 //! Read side of the case database. Every struct here is what the CLI prints and the web API will serialize.
 
 use crate::error::CaseError;
+use crate::evidence::decode_rel_path;
 use crate::{blobs, Case};
 use rusqlite::{params, params_from_iter, OptionalExtension, Row};
 use serde::Serialize;
@@ -39,13 +40,13 @@ pub fn absent_stores(case: &Case, root_id: i64) -> Result<Vec<String>, CaseError
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SourceFileRow { pub id: i64, pub root_id: i64, pub store_id: Option<i64>, pub rel_path: String, pub size: i64, pub sha256: String, pub mtime: Option<String>, pub retained: bool, pub parse_status: String, pub parse_error: Option<String>, pub record_count: i64, pub anomaly_count: i64 }
+pub struct SourceFileRow { pub id: i64, pub root_id: i64, pub store_id: Option<i64>, pub rel_path: String, pub kind: String, pub link_target: Option<String>, pub version: i64, pub size: i64, pub sha256: String, pub mtime: Option<String>, pub retained: bool, pub parse_status: String, pub parse_error: Option<String>, pub record_count: i64, pub anomaly_count: i64 }
 
 pub fn source_files(case: &Case, root_id: i64) -> Result<Vec<SourceFileRow>, CaseError> {
     let mut stmt = case.conn.prepare(
-        "SELECT id, root_id, store_id, rel_path, size, sha256, mtime, retained, parse_status, parse_error, record_count, anomaly_count FROM source_files WHERE root_id = ?1 ORDER BY rel_path, version",
+        "SELECT id, root_id, store_id, rel_path, size, sha256, mtime, retained, parse_status, parse_error, record_count, anomaly_count, kind, link_target, version FROM source_files WHERE root_id = ?1 ORDER BY rel_path, version",
     )?;
-    let rows = stmt.query_map([root_id], |r| Ok(SourceFileRow { id: r.get(0)?, root_id: r.get(1)?, store_id: r.get(2)?, rel_path: r.get(3)?, size: r.get(4)?, sha256: r.get(5)?, mtime: r.get(6)?, retained: r.get::<_, i64>(7)? == 1, parse_status: r.get(8)?, parse_error: r.get(9)?, record_count: r.get(10)?, anomaly_count: r.get(11)? }))?;
+    let rows = stmt.query_map([root_id], |r| Ok(SourceFileRow { id: r.get(0)?, root_id: r.get(1)?, store_id: r.get(2)?, rel_path: r.get(3)?, size: r.get(4)?, sha256: r.get(5)?, mtime: r.get(6)?, retained: r.get::<_, i64>(7)? == 1, parse_status: r.get(8)?, parse_error: r.get(9)?, record_count: r.get(10)?, anomaly_count: r.get(11)?, kind: r.get(12)?, link_target: r.get(13)?, version: r.get(14)? }))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
@@ -80,7 +81,11 @@ pub fn sessions(case: &Case, f: &SessionFilter) -> Result<Vec<SessionRow>, CaseE
     if let Some(r) = f.root_id { sql.push_str(" AND st.root_id = ?"); args.push(Box::new(r)); }
     if let Some(h) = &f.harness { sql.push_str(" AND st.harness = ?"); args.push(Box::new(h.clone())); }
     if let Some(k) = &f.kind { sql.push_str(" AND s.kind = ?"); args.push(Box::new(k.clone())); }
-    if let Some(p) = &f.project_contains { sql.push_str(" AND s.project_path LIKE ?"); args.push(Box::new(format!("%{p}%"))); }
+    if let Some(p) = &f.project_contains {
+        let escaped = p.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        sql.push_str(" AND s.project_path LIKE ? ESCAPE '\\'");
+        args.push(Box::new(format!("%{escaped}%")));
+    }
     sql.push_str(" ORDER BY s.first_ts DESC, s.id DESC");
     let mut stmt = case.conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args.iter().map(|a| a.as_ref())), session_row)?;
@@ -173,13 +178,13 @@ pub fn observations(case: &Case, f: &ObservationFilter) -> Result<Vec<Observatio
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AnomalyRow { pub id: i64, pub root_id: i64, pub store_id: Option<i64>, pub source_file_id: Option<i64>, pub session_id: Option<i64>, pub kind: String, pub severity: String, pub byte_offset: Option<i64>, pub message: String, pub details: Value }
+pub struct AnomalyRow { pub id: i64, pub root_id: i64, pub store_id: Option<i64>, pub source_file_id: Option<i64>, pub session_id: Option<i64>, pub kind: String, pub severity: String, pub byte_offset: Option<i64>, pub provenance_id: Option<i64>, pub message: String, pub details: Value }
 
 #[derive(Debug, Clone, Default)]
 pub struct AnomalyFilter { pub root_id: Option<i64>, pub kind: Option<String>, pub severity: Option<String> }
 
 pub fn anomalies(case: &Case, f: &AnomalyFilter) -> Result<Vec<AnomalyRow>, CaseError> {
-    let mut sql = String::from("SELECT id, root_id, store_id, source_file_id, session_id, kind, severity, byte_offset, message, details FROM anomalies WHERE 1 = 1");
+    let mut sql = String::from("SELECT id, root_id, store_id, source_file_id, session_id, kind, severity, byte_offset, message, details, provenance_id FROM anomalies WHERE 1 = 1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(r) = f.root_id { sql.push_str(" AND root_id = ?"); args.push(Box::new(r)); }
     if let Some(k) = &f.kind { sql.push_str(" AND kind = ?"); args.push(Box::new(k.clone())); }
@@ -188,7 +193,7 @@ pub fn anomalies(case: &Case, f: &AnomalyFilter) -> Result<Vec<AnomalyRow>, Case
     let mut stmt = case.conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args.iter().map(|a| a.as_ref())), |r| {
         let details: String = r.get(9)?;
-        Ok(AnomalyRow { id: r.get(0)?, root_id: r.get(1)?, store_id: r.get(2)?, source_file_id: r.get(3)?, session_id: r.get(4)?, kind: r.get(5)?, severity: r.get(6)?, byte_offset: r.get(7)?, message: r.get(8)?, details: json(details) })
+        Ok(AnomalyRow { id: r.get(0)?, root_id: r.get(1)?, store_id: r.get(2)?, source_file_id: r.get(3)?, session_id: r.get(4)?, kind: r.get(5)?, severity: r.get(6)?, byte_offset: r.get(7)?, provenance_id: r.get(10)?, message: r.get(8)?, details: json(details) })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -204,7 +209,7 @@ pub fn claims(case: &Case, session_id: i64) -> Result<Vec<ClaimRow>, CaseError> 
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProvenanceRow {
-    pub id: i64, pub source_file_id: i64, pub rel_path: String, pub file_sha256: String, pub root_path: String, pub retained: bool,
+    pub id: i64, pub source_file_id: i64, pub rel_path: String, pub rel_path_encoded: bool, pub file_sha256: String, pub root_path: String, pub retained: bool,
     pub byte_offset: i64, pub byte_length: i64, pub record_index: i64, pub content_sha256: String, pub parser_name: String, pub parser_version: String, pub origin: String,
 }
 
@@ -212,10 +217,10 @@ pub fn provenance(case: &Case, id: i64) -> Result<Option<ProvenanceRow>, CaseErr
     Ok(case
         .conn
         .query_row(
-            "SELECT p.id, p.source_file_id, f.rel_path, f.sha256, r.path, f.retained, p.byte_offset, p.byte_length, p.record_index, p.content_sha256, p.parser_name, p.parser_version, p.origin
+            "SELECT p.id, p.source_file_id, f.rel_path, f.sha256, r.path, f.retained, p.byte_offset, p.byte_length, p.record_index, p.content_sha256, p.parser_name, p.parser_version, p.origin, f.rel_path_encoded
              FROM provenance p JOIN source_files f ON f.id = p.source_file_id JOIN evidence_roots r ON r.id = f.root_id WHERE p.id = ?1",
             [id],
-            |r| Ok(ProvenanceRow { id: r.get(0)?, source_file_id: r.get(1)?, rel_path: r.get(2)?, file_sha256: r.get(3)?, root_path: r.get(4)?, retained: r.get::<_, i64>(5)? == 1, byte_offset: r.get(6)?, byte_length: r.get(7)?, record_index: r.get(8)?, content_sha256: r.get(9)?, parser_name: r.get(10)?, parser_version: r.get(11)?, origin: r.get(12)? }),
+            |r| Ok(ProvenanceRow { id: r.get(0)?, source_file_id: r.get(1)?, rel_path: r.get(2)?, file_sha256: r.get(3)?, root_path: r.get(4)?, retained: r.get::<_, i64>(5)? == 1, byte_offset: r.get(6)?, byte_length: r.get(7)?, record_index: r.get(8)?, content_sha256: r.get(9)?, parser_name: r.get(10)?, parser_version: r.get(11)?, origin: r.get(12)?, rel_path_encoded: r.get(13)? }),
         )
         .optional()?)
 }
@@ -223,13 +228,13 @@ pub fn provenance(case: &Case, id: i64) -> Result<Option<ProvenanceRow>, CaseErr
 /// The exact bytes a provenance row points at, from the retained copy when there is one.
 pub fn raw_record(case: &Case, provenance_id: i64) -> Result<Vec<u8>, CaseError> {
     let p = provenance(case, provenance_id)?.ok_or_else(|| CaseError::Export(format!("no provenance row {provenance_id}")))?;
-    let path = if p.retained { blobs::path(&case.dir, &p.file_sha256) } else { std::path::Path::new(&p.root_path).join(&p.rel_path) };
+    let path = if p.retained { blobs::path(&case.dir, &p.file_sha256) } else { std::path::Path::new(&p.root_path).join(decode_rel_path(&p.rel_path, p.rel_path_encoded)) };
     let mut f = std::fs::File::open(path)?;
     f.seek(SeekFrom::Start(p.byte_offset as u64))?;
     let mut buf = vec![0u8; p.byte_length as usize];
     f.read_exact(&mut buf)?;
     if sha256_hex(&buf) != p.content_sha256 {
-        return Err(CaseError::Export("record bytes do not match provenance hash".to_string()));
+        return Err(CaseError::IntegrityMismatch(format!("record bytes of provenance {provenance_id} do not match its hash")));
     }
     Ok(buf)
 }

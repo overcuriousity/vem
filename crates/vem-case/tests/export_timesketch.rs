@@ -20,7 +20,7 @@ fn ingested() -> (tempfile::TempDir, Case) {
 fn one_event_per_message_tool_call_and_observation() {
     let (_t, case) = ingested();
     let ev = events(&case, &Scope::Case).unwrap();
-    assert_eq!(ev.len(), 22 + 4 + 6);
+    assert_eq!(ev.len(), 23 + 4 + 6, "23 messages: the deleted session's history prompt is kept");
     let first = ev.iter().find(|e| e.attributes.get("record_type").map(String::as_str) == Some("ai-title")).unwrap();
     assert_eq!(first.datetime, None);
     assert_eq!(first.timestamp_desc, "No Timestamp");
@@ -30,7 +30,7 @@ fn one_event_per_message_tool_call_and_observation() {
     assert!(first.tags.contains(&"meta".to_string()) && first.tags.contains(&"absent".to_string()));
     assert_eq!(first.provenance.byte_offset, 0);
     let cmd = ev.iter().find(|e| e.attributes.get("observation_kind").map(String::as_str) == Some("command_executed")).unwrap();
-    assert_eq!(cmd.datetime.as_deref(), Some("2026-09-30T10:00:02.000Z"));
+    assert_eq!(cmd.datetime.as_deref(), Some("2026-09-30T10:00:01.000Z"), "tool_use time (M6)");
     assert_eq!(cmd.timestamp_desc, "Observation Time (stored)");
     assert_eq!(cmd.attributes["command"], "ls -la");
     assert!(cmd.message.contains("ls -la"));
@@ -50,7 +50,7 @@ fn scopes_restrict_events() {
     let ev = events(&case, &Scope::Session(s0.id)).unwrap();
     assert_eq!(ev.len(), 2);
     let ev = events(&case, &Scope::Root(s0.root_id)).unwrap();
-    assert_eq!(ev.len(), 32);
+    assert_eq!(ev.len(), 33);
 }
 
 #[test]

@@ -47,11 +47,21 @@ pub enum ParseError {
     Invalid(String),
 }
 
+/// What `parse_file` did with a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseOutcome {
+    /// A parser read the file; `records` is the number of records it read (lines, documents).
+    Parsed { records: u64 },
+    /// No parser understands this file; it stays inventoried (hashed and retained) only.
+    NotParsed,
+}
+
 pub trait HarnessAdapter: Send + Sync {
     fn harness(&self) -> Harness;
     /// `Some` when `root` is this harness's directory, with the signatures that matched.
     fn identify(&self, root: &Path) -> Option<Identification>;
     fn discover(&self, root: &Path) -> Discovery;
     /// Parses one file of one store, emitting into `sink`. Must not panic on malformed input.
-    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<(), ParseError>;
+    /// Reads the file only through `ctx.abs_path`, which may be a retained copy rather than the evidence.
+    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError>;
 }

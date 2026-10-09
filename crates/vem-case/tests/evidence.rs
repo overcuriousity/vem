@@ -103,3 +103,62 @@ fn unrecognized_dir_fails_with_child_hint_and_forced_harness_works() {
     assert!(report.evidence.iter().any(|e| e.contains("forced")));
     assert_eq!(report.file_count, 0);
 }
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_names_are_stored_losslessly() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let ev = tmp.path().join("ev");
+    copy_dir(&fixture_root(), &ev);
+    std::fs::write(ev.join(OsStr::from_bytes(b"a\xff.txt")), "one").unwrap();
+    std::fs::write(ev.join(OsStr::from_bytes(b"a\xfe.txt")), "two").unwrap();
+    std::fs::write(ev.join("a%FF.txt"), "literal percent, valid UTF-8").unwrap();
+    let mut case = Case::create(&tmp.path().join("c"), "n", None).unwrap();
+    let report = attach(&mut case, &ev, opts("x")).unwrap();
+    assert_eq!(report.file_count, file_count(&fixture_root()) + 3, "one odd name must not block the root");
+    let n: i64 = case.conn.query_row("SELECT COUNT(*) FROM anomalies WHERE kind = 'non_utf8_path' AND severity = 'info'", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 2);
+    let rows: Vec<(String, bool)> = {
+        let mut stmt = case.conn.prepare("SELECT rel_path, rel_path_encoded FROM source_files WHERE rel_path LIKE 'a%' ORDER BY rel_path, rel_path_encoded").unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
+    };
+    // Distinct names stay distinct, including a valid name that happens to look like an encoding.
+    assert_eq!(rows, vec![("a%FE.txt".to_string(), true), ("a%FF.txt".to_string(), false), ("a%FF.txt".to_string(), true)]);
+    assert_eq!(vem_case::evidence::decode_rel_path("a%FF.txt", true).as_os_str().as_bytes(), b"a\xff.txt");
+    assert_eq!(vem_case::evidence::decode_rel_path("a%FF.txt", false).as_os_str().as_bytes(), b"a%FF.txt");
+    let r = vem_case::verify::verify(&mut case).unwrap();
+    assert!(r.missing.is_empty() && r.drifted.is_empty(), "{r:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinks_are_recorded_and_never_followed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ev = tmp.path().join("ev");
+    copy_dir(&fixture_root(), &ev);
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("todo.json"), "outside the evidence root").unwrap();
+    std::os::unix::fs::symlink(&outside, ev.join("todos")).unwrap();
+    std::os::unix::fs::symlink(outside.join("todo.json"), ev.join("projects/-home-alice-proj/linked.jsonl")).unwrap();
+    let mut case = Case::create(&tmp.path().join("c"), "n", None).unwrap();
+    let report = attach(&mut case, &ev, opts("x")).unwrap();
+    assert_eq!(report.file_count, file_count(&fixture_root()), "nothing outside the root is manifested");
+    assert_eq!(report.symlinks, vec!["projects/-home-alice-proj/linked.jsonl".to_string(), "todos".to_string()]);
+    let todos = report.stores.iter().find(|s| s.kind == "claude:todos").expect("the linked store is present, not absent");
+    assert_eq!(todos.file_count, 0, "and not followed");
+    let rows: Vec<(String, String, String, i64)> = {
+        let mut stmt = case.conn.prepare("SELECT rel_path, kind, link_target, size FROM source_files WHERE kind = 'symlink' ORDER BY rel_path").unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().map(|r| r.unwrap()).collect()
+    };
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1], ("todos".to_string(), "symlink".to_string(), outside.to_string_lossy().to_string(), 0));
+    let n: i64 = case.conn.query_row("SELECT COUNT(*) FROM anomalies WHERE kind = 'symlink_in_evidence'", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 2);
+    let r = vem_case::verify::verify(&mut case).unwrap();
+    assert!(r.missing.is_empty() && r.drifted.is_empty(), "{r:?}");
+    let ing = vem_case::ingest::ingest(&mut case, None).unwrap();
+    assert_eq!((ing.files_failed, ing.sessions), (0, 5), "the linked transcript is not parsed");
+}

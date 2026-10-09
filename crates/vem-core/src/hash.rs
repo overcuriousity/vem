@@ -26,6 +26,28 @@ pub fn sha256_file(path: &Path) -> io::Result<(String, u64)> {
     Ok((hex::encode(hasher.finalize()), total))
 }
 
+/// Copies `src` to `dst` while hashing, so the digest describes exactly the bytes written.
+/// Returns `(hex_digest, size_in_bytes)`.
+pub fn copy_and_hash(src: &Path, dst: &Path) -> io::Result<(String, u64)> {
+    use std::io::Write;
+    let mut input = std::fs::File::open(src)?;
+    let mut out = std::fs::File::create(dst)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut total: u64 = 0;
+    loop {
+        let n = input.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        out.write_all(&buf[..n])?;
+        total += n as u64;
+    }
+    out.flush()?;
+    Ok((hex::encode(hasher.finalize()), total))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

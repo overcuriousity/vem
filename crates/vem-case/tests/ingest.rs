@@ -28,24 +28,37 @@ fn ingests_fixture_into_canonical_rows() {
     let report = ingest(&mut case, None).unwrap();
     assert_eq!(tree_fingerprint(&fixture_root()), before, "evidence must not be touched");
     assert_eq!(report.files_failed, 0);
-    assert_eq!(report.sessions, 4, "S0, S1, subagent, orphan");
-    assert_eq!(report.messages, 22, "16 + 2 + (2 + subagent-meta) + 1");
+    assert_eq!((report.files_parsed, report.files_inventoried), (6, 4), "4 files no parser reads: backup, tool result, snapshot, settings");
+    assert_eq!(report.sessions, 5, "S0, S1, subagent, orphan, and the sidecar-only session of the deleted transcript (I7)");
+    assert_eq!(report.messages, 23, "16 + 2 + (2 + subagent-meta) + 1 + the deleted session's one history prompt (I7)");
     assert_eq!(report.tool_calls, 4);
     assert_eq!(report.observations, 6, "command, written, edited, spawned, file-history backup, paste");
     assert_eq!(report.anomalies, 4, "truncated line, unknown record type, orphaned file, missing transcript");
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 4);
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 22);
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 5);
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 23);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM blocks"), count(&case, "SELECT COUNT(*) FROM blocks_fts"));
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM anomalies WHERE kind = 'truncated_line'"), 1);
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM anomalies WHERE kind = 'missing_transcript' AND session_id IS NULL"), 1);
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM source_files WHERE parse_status = 'parsed'"), count(&case, "SELECT COUNT(*) FROM source_files"));
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM anomalies WHERE kind = 'truncated_line' AND provenance_id IS NOT NULL"), 1);
+    assert_eq!(
+        count(&case, "SELECT COUNT(*) FROM anomalies a JOIN sessions s ON s.id = a.session_id WHERE a.kind = 'missing_transcript' AND s.kind = 'sidecar_only'"),
+        1,
+        "the missing_transcript anomaly links to the sidecar-only session"
+    );
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM source_files WHERE parse_status = 'parsed'"), 6);
+    assert_eq!(
+        count(&case, "SELECT COUNT(*) FROM source_files WHERE parse_status = 'inventoried' AND (rel_path LIKE 'file-history/%' OR rel_path LIKE '%tool-results%' OR rel_path LIKE 'shell-snapshots/%' OR rel_path = 'settings.json')"),
+        4
+    );
     assert_eq!(count(&case, "SELECT COUNT(*) FROM stores WHERE kind = 'claude:projects' AND status = 'parsed'"), 1);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM stores WHERE kind = 'claude:settings' AND status = 'inventoried'"), 1);
     let (records, anomalies): (i64, i64) = case
         .conn
         .query_row("SELECT record_count, anomaly_count FROM source_files WHERE rel_path LIKE '%000000000001.jsonl'", [], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap();
-    assert_eq!((records, anomalies), (16, 2));
+    assert_eq!((records, anomalies), (17, 2), "records read: 16 parsed lines plus the truncated one (M5)");
+    let audit: String = case.conn.query_row("SELECT details FROM audit_log WHERE action = 'ingest'", [], |r| r.get(0)).unwrap();
+    let audit: serde_json::Value = serde_json::from_str(&audit).unwrap();
+    assert_eq!(audit["tool_version"], vem_case::TOOL_VERSION);
+    assert!(audit["parsers"].as_array().unwrap().iter().any(|p| p == "claude_code.transcript/1"));
 }
 
 #[test]
@@ -108,9 +121,9 @@ fn ingest_is_idempotent() {
     let first = ingest(&mut case, None).unwrap();
     let second = ingest(&mut case, None).unwrap();
     assert_eq!(second.files_parsed, 0);
-    assert_eq!(second.files_skipped, first.files_parsed);
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 4);
-    assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 22);
+    assert_eq!(second.files_skipped, first.files_parsed + first.files_inventoried);
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 5);
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 23);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM anomalies"), 4);
     assert_eq!(count(&case, "SELECT COUNT(*) FROM audit_log WHERE action = 'ingest'"), 2);
 }
@@ -128,11 +141,80 @@ fn unknown_root_filter_is_an_error_and_a_broken_file_is_marked_failed_without_st
         .unwrap();
     let report = ingest(&mut case, Some(root)).unwrap();
     assert_eq!(report.files_failed, 1);
-    assert_eq!(report.sessions, 5, "the ghost session row was created before the open failed");
+    assert_eq!(report.sessions, 5, "the real sessions only");
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions WHERE harness_session_id LIKE 'ghost%'"), 0, "a failed file leaves no phantom session (I2)");
     let (status, err): (String, Option<String>) = case
         .conn
         .query_row("SELECT parse_status, parse_error FROM source_files WHERE rel_path LIKE '%ghost%'", [], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap();
     assert_eq!(status, "failed");
     assert!(err.unwrap().contains("io error"));
+    let again = ingest(&mut case, Some(root)).unwrap();
+    assert_eq!((again.files_failed, again.files_parsed), (1, 0), "failed files are retried on the next ingest");
+}
+
+fn attach_copy(retain: bool) -> (tempfile::TempDir, Case, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let ev = tmp.path().join("ev");
+    copy_dir(&fixture_root(), &ev);
+    let mut case = Case::create(&tmp.path().join("c"), "n", None).unwrap();
+    attach(&mut case, &ev, AttachOptions { label: "l".into(), host: None, user: None, os: None, harness: None, retain }).unwrap();
+    (tmp, case, ev)
+}
+
+#[test]
+fn a_file_changed_after_attach_is_flagged_and_ingested_as_a_new_version() {
+    use std::io::Write;
+    let (_tmp, mut case, ev) = attach_copy(true);
+    let rel = "projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000000.jsonl";
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(ev.join(rel))
+        .unwrap()
+        .write_all(b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"injected after attach\"},\"uuid\":\"inj\",\"timestamp\":\"2026-09-29T09:00:05Z\",\"sessionId\":\"0f0f0f0f-0000-4000-8000-000000000000\"}\n")
+        .unwrap();
+    let report = ingest(&mut case, None).unwrap();
+    assert_eq!(report.files_drifted, 1);
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = case.conn.prepare("SELECT version, parse_status FROM source_files WHERE rel_path = ?1 ORDER BY version").unwrap();
+        stmt.query_map([rel], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
+    };
+    assert_eq!(rows, vec![(1, "superseded".to_string()), (2, "parsed".to_string())], "the earlier version is kept");
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM anomalies WHERE kind = 'hash_drift' AND severity = 'error'"), 1);
+    // The injected record is attributed to version 2, whose retained copy holds it, so raw bytes verify.
+    let (prov_id, file_version): (i64, i64) = case
+        .conn
+        .query_row(
+            "SELECT m.provenance_id, f.version FROM messages m JOIN blocks b ON b.message_id = m.id JOIN provenance p ON p.id = m.provenance_id JOIN source_files f ON f.id = p.source_file_id WHERE b.text = 'injected after attach'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(file_version, 2);
+    assert!(vem_case::query::raw_record(&case, prov_id).unwrap().ends_with(b"\"sessionId\":\"0f0f0f0f-0000-4000-8000-000000000000\"}"));
+    assert!(vem_case::verify::verify(&mut case).unwrap().drifted.is_empty(), "verify compares against the latest version");
+}
+
+#[test]
+fn a_detached_case_ingests_from_its_retained_copies() {
+    let (_tmp, mut case, ev) = attach_copy(true);
+    std::fs::remove_dir_all(&ev).unwrap();
+    let report = ingest(&mut case, None).unwrap();
+    assert_eq!((report.files_failed, report.sessions, report.messages), (0, 5, 23));
+}
+
+#[test]
+fn an_unavailable_root_fails_cleanly_and_is_retried_when_it_returns() {
+    let (tmp, mut case, ev) = attach_copy(false);
+    let away = tmp.path().join("away");
+    std::fs::rename(&ev, &away).unwrap();
+    let first = ingest(&mut case, None).unwrap();
+    assert_eq!(first.files_failed, 10);
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 0, "no phantom sessions");
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM source_files WHERE parse_status = 'failed' AND parse_error LIKE 'io error%'"), 10);
+    std::fs::rename(&away, &ev).unwrap();
+    let second = ingest(&mut case, None).unwrap();
+    assert_eq!((second.files_failed, second.files_parsed, second.files_inventoried), (0, 6, 4));
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM sessions"), 5);
+    assert_eq!(count(&case, "SELECT COUNT(*) FROM messages"), 23);
 }

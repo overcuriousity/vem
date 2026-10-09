@@ -27,7 +27,7 @@ fn full_headless_workflow() {
 
     vem().args(["evidence", "list", &case_s]).assert().success().stdout(predicate::str::contains("alice .claude"));
 
-    vem().args(["ingest", &case_s]).assert().success().stdout(predicate::str::contains("sessions: 4")).stdout(predicate::str::contains("anomalies: 4"));
+    vem().args(["ingest", &case_s]).assert().success().stdout(predicate::str::contains("sessions: 5")).stdout(predicate::str::contains("anomalies: 4"));
 
     vem().args(["ingest", &case_s]).assert().success().stdout(predicate::str::contains("files_parsed: 0"));
 
@@ -42,12 +42,12 @@ fn full_headless_workflow() {
 
     let sessions_json = vem().args(["--json", "sessions", &case_s]).output().unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&sessions_json.stdout).unwrap();
-    assert_eq!(parsed.as_array().unwrap().len(), 4);
+    assert_eq!(parsed.as_array().unwrap().len(), 5, "4 transcript sessions and the sidecar-only one");
 
     let jsonl = tmp.path().join("tl.jsonl");
-    vem().args(["export", &case_s, "--format", "timesketch-jsonl", "-o", jsonl.to_str().unwrap()]).assert().success().stdout(predicate::str::contains("32"));
+    vem().args(["export", &case_s, "--format", "timesketch-jsonl", "-o", jsonl.to_str().unwrap()]).assert().success().stdout(predicate::str::contains("33"));
     let text = std::fs::read_to_string(&jsonl).unwrap();
-    assert_eq!(text.lines().count(), 32);
+    assert_eq!(text.lines().count(), 33);
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert!(first.get("timestamp_desc").is_some());
 

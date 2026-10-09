@@ -33,7 +33,7 @@ fn derives_command_file_and_subagent_observations() {
     assert_eq!(cmd.len(), 1);
     assert_eq!(cmd[0].command.as_deref(), Some("ls -la"));
     assert_eq!(cmd[0].confidence, Confidence::High);
-    assert_eq!(cmd[0].timestamp.value.as_deref(), Some("2026-09-30T10:00:02.000Z"));
+    assert_eq!(cmd[0].timestamp.value.as_deref(), Some("2026-09-30T10:00:01.000Z"), "stamped when the command was issued (tool_use time)");
     assert!(matches!(cmd[0].derived_from, Derivation::ToolCall(ToolCallHandle(1))));
 
     let written = sink.observations_of(ObservationKind::FileWritten);
@@ -86,6 +86,8 @@ fn unpaired_result_is_an_anomaly_and_unfinished_use_is_a_result_less_call() {
     let a = sink.anomalies_of(AnomalyKind::UnpairedToolResult);
     assert_eq!(a.len(), 1);
     assert_eq!(a[0].details["tool_use_id"], "toolu_elsewhere");
+    let prov = a[0].provenance.as_ref().expect("record-level anomaly carries provenance");
+    assert_eq!((prov.byte_offset, prov.record_index), (0, 0));
     assert_eq!(sink.tool_calls.len(), 1);
     let (_, _, open) = &sink.tool_calls[0];
     assert_eq!(open.name, "Bash");
@@ -120,4 +122,21 @@ fn read_glob_web_and_multiedit_observations() {
     assert_eq!(edits.len(), 2);
     assert_eq!(edits[1].before_blob.as_deref(), Some(sha256_hex(b"c").as_str()));
     assert_eq!(edits[1].after_blob.as_deref(), Some(sha256_hex(b"d").as_str()));
+}
+
+#[test]
+fn repeated_tool_use_id_keeps_the_displaced_use_as_a_result_less_call() {
+    let (tmp, rel) = temp_root_with_transcript(
+        "abcdabcd-0000-4000-8000-0000000000ab",
+        &[
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_dup","name":"Bash","input":{"command":"first"}}]},"uuid":"r1","timestamp":"2026-09-30T10:00:00Z","sessionId":"abcdabcd-0000-4000-8000-0000000000ab"}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_dup","name":"Bash","input":{"command":"second"}}]},"uuid":"r2","timestamp":"2026-09-30T10:00:01Z","sessionId":"abcdabcd-0000-4000-8000-0000000000ab"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_dup","content":"ok"}]},"uuid":"r3","timestamp":"2026-09-30T10:00:02Z","sessionId":"abcdabcd-0000-4000-8000-0000000000ab"}"#,
+        ],
+        true,
+    );
+    let mut sink = VecSink::default();
+    parse_file_into(tmp.path(), &rel, &mut sink);
+    let cmds: Vec<(&str, bool)> = sink.tool_calls.iter().map(|(_, _, t)| (t.input["command"].as_str().unwrap(), t.tool_result.is_some())).collect();
+    assert_eq!(cmds, vec![("first", false), ("second", true)]);
 }

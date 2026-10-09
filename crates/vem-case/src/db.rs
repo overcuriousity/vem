@@ -18,9 +18,11 @@ pub fn migrate(conn: &Connection) -> Result<(), CaseError> {
     if version > SCHEMA_VERSION {
         return Err(CaseError::SchemaTooNew(version));
     }
+    // Each step runs in one transaction with its `user_version` bump (DDL and user_version are
+    // transactional in SQLite), so a crash cannot leave a half-created schema. Later versions add
+    // `if version < N { BEGIN; <changes>; PRAGMA user_version = N; COMMIT; }` steps here, in order.
     if version < 1 {
-        conn.execute_batch(include_str!("schema.sql"))?;
-        conn.execute_batch("PRAGMA user_version = 1;")?;
+        conn.execute_batch(&format!("BEGIN;\n{}\nPRAGMA user_version = 1;\nCOMMIT;", include_str!("schema.sql")))?;
     }
     Ok(())
 }

@@ -143,7 +143,7 @@ pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandl
         match b.kind {
             BlockKind::ToolUse => {
                 if let Some(id) = &b.tool_use_id {
-                    state.pending.insert(
+                    let displaced = state.pending.insert(
                         id.clone(),
                         PendingToolUse {
                             message,
@@ -153,6 +153,10 @@ pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandl
                             started: at.clone(),
                         },
                     );
+                    // A repeated tool_use id (branching or replayed records): the earlier use is kept as a result-less call.
+                    if let Some(p) = displaced {
+                        emit_unfinished(state, p, sink);
+                    }
                 }
             }
             BlockKind::ToolResult => {
@@ -175,7 +179,8 @@ pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandl
                                 ended: at.clone(),
                             },
                         );
-                        for obs in derive_observations(&p.name, &p.input, tool_use_result, handle, at, sink) {
+                        // Observations are stamped with the tool_use time: when the command was issued.
+                        for obs in derive_observations(&p.name, &p.input, tool_use_result, handle, &p.started, sink) {
                             sink.observation(state.session, obs);
                         }
                     }
@@ -187,6 +192,7 @@ pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandl
                         byte_offset: Some(prov.byte_offset),
                         message: format!("tool_result {id} has no tool_use in this file"),
                         details: json!({ "tool_use_id": id }),
+                        provenance: Some(prov.clone()),
                     }),
                 }
             }
@@ -200,23 +206,27 @@ pub(crate) fn flush_unfinished(state: &mut TranscriptState<'_>, sink: &mut dyn P
     let mut pending: Vec<(String, PendingToolUse)> = state.pending.drain().collect();
     pending.sort_by_key(|a| (a.1.message.0, a.1.ordinal));
     for (_, p) in pending {
-        let handle = sink.tool_call(
-            state.session,
-            ToolCallDraft {
-                name: p.name.clone(),
-                category: categorize(&p.name),
-                input: p.input.clone(),
-                tool_use: BlockRef { message: p.message, ordinal: p.ordinal },
-                tool_result: None,
-                result_text: None,
-                result_payload: None,
-                is_error: false,
-                started: p.started.clone(),
-                ended: Timestamp::absent(),
-            },
-        );
-        for obs in derive_observations(&p.name, &p.input, None, handle, &p.started, sink) {
-            sink.observation(state.session, obs);
-        }
+        emit_unfinished(state, p, sink);
+    }
+}
+
+fn emit_unfinished(state: &TranscriptState<'_>, p: PendingToolUse, sink: &mut dyn ParseSink) {
+    let handle = sink.tool_call(
+        state.session,
+        ToolCallDraft {
+            name: p.name.clone(),
+            category: categorize(&p.name),
+            input: p.input.clone(),
+            tool_use: BlockRef { message: p.message, ordinal: p.ordinal },
+            tool_result: None,
+            result_text: None,
+            result_payload: None,
+            is_error: false,
+            started: p.started.clone(),
+            ended: Timestamp::absent(),
+        },
+    );
+    for obs in derive_observations(&p.name, &p.input, None, handle, &p.started, sink) {
+        sink.observation(state.session, obs);
     }
 }

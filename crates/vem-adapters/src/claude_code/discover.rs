@@ -8,8 +8,20 @@ use vem_core::model::Harness;
 
 const SIGNATURE_BYTES: usize = 16 * 1024;
 
+/// Discovery never follows symbolic links: a link in evidence is recorded in the manifest, not traversed.
+fn is_real_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).map(|m| m.is_file()).unwrap_or(false)
+}
+
+fn is_real_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).map(|m| m.is_dir()).unwrap_or(false)
+}
+
 fn head(path: &Path) -> Vec<u8> {
     let mut buf = Vec::new();
+    if !is_real_file(path) {
+        return buf;
+    }
     if let Ok(f) = std::fs::File::open(path) {
         let _ = f.take(SIGNATURE_BYTES as u64).read_to_end(&mut buf);
     }
@@ -27,10 +39,10 @@ pub fn is_transcript_name(name: &str) -> bool {
 /// First transcript under `projects/` whose head carries both `parentUuid` and `sessionId`.
 fn first_transcript_signature(root: &Path) -> Option<PathBuf> {
     let projects = root.join("projects");
-    if !projects.is_dir() {
+    if !is_real_dir(&projects) {
         return None;
     }
-    for entry in walkdir::WalkDir::new(&projects).max_depth(4).sort_by_file_name().into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(&projects).max_depth(4).follow_links(false).follow_root_links(false).sort_by_file_name().into_iter().flatten() {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -59,7 +71,7 @@ pub fn identify(root: &Path) -> Option<Identification> {
     if history_signature(root) {
         evidence.push("history.jsonl carrying display and sessionId".to_string());
     }
-    if root.join("file-history").is_dir() {
+    if is_real_dir(&root.join("file-history")) {
         evidence.push("file-history directory".to_string());
     }
     if evidence.is_empty() {
@@ -70,14 +82,18 @@ pub fn identify(root: &Path) -> Option<Identification> {
 }
 
 /// All regular files under `root/rel`, as paths relative to `root`, sorted. A file path yields itself.
+/// Symbolic links (including `rel` itself) are not followed and yield nothing.
 pub fn list_files(root: &Path, rel: &Path) -> Vec<PathBuf> {
     let abs = root.join(rel);
     let mut out = Vec::new();
-    if abs.is_file() {
+    if is_real_file(&abs) {
         out.push(rel.to_path_buf());
         return out;
     }
-    for entry in walkdir::WalkDir::new(&abs).follow_links(false).into_iter().flatten() {
+    if !is_real_dir(&abs) {
+        return out;
+    }
+    for entry in walkdir::WalkDir::new(&abs).follow_links(false).follow_root_links(false).into_iter().flatten() {
         if entry.file_type().is_file() {
             if let Ok(r) = entry.path().strip_prefix(root) {
                 out.push(r.to_path_buf());
@@ -116,7 +132,8 @@ pub fn discover(root: &Path) -> Discovery {
     let mut d = Discovery::default();
     for (kind, rel) in EXPECTED_STORES {
         let rel_path = PathBuf::from(rel);
-        if !root.join(&rel_path).exists() {
+        // `symlink_metadata`: a store path that is a symbolic link is present (and manifested as a link) but not followed.
+        if std::fs::symlink_metadata(root.join(&rel_path)).is_err() {
             d.absent.push(kind.to_string());
             continue;
         }

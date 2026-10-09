@@ -38,15 +38,23 @@ CREATE TABLE absent_stores (
     kind TEXT NOT NULL
 );
 
+-- rel_path: '/'-separated path relative to the root. A name that is not valid UTF-8 is stored with each
+-- invalid byte and each '%' percent-encoded (%XX) and rel_path_encoded = 1; decode with
+-- evidence::decode_rel_path. kind: 'file', or 'symlink' (never followed; sha256 is the SHA-256 of the
+-- link target string, size 0). ctime is the inode change time, btime the birth time where available.
 CREATE TABLE source_files (
     id INTEGER PRIMARY KEY,
     root_id INTEGER NOT NULL REFERENCES evidence_roots(id),
     store_id INTEGER REFERENCES stores(id),
     rel_path TEXT NOT NULL,
+    rel_path_encoded INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT 'file',
+    link_target TEXT,
     size INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
     mtime TEXT,
     ctime TEXT,
+    btime TEXT,
     atime TEXT,
     retained INTEGER NOT NULL DEFAULT 0,
     parse_status TEXT NOT NULL DEFAULT 'unparsed',
@@ -55,7 +63,7 @@ CREATE TABLE source_files (
     anomaly_count INTEGER NOT NULL DEFAULT 0,
     ingested_at TEXT,
     version INTEGER NOT NULL DEFAULT 1,
-    UNIQUE (root_id, rel_path, version)
+    UNIQUE (root_id, rel_path, rel_path_encoded, version)
 );
 
 CREATE TABLE sessions (
@@ -179,6 +187,7 @@ CREATE TABLE anomalies (
     kind TEXT NOT NULL,
     severity TEXT NOT NULL,
     byte_offset INTEGER,
+    provenance_id INTEGER REFERENCES provenance(id),
     message TEXT NOT NULL,
     details TEXT NOT NULL DEFAULT '{}'
 );

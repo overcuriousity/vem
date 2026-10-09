@@ -4,7 +4,8 @@ use crate::blobs;
 use crate::error::CaseError;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
-use std::collections::HashMap;
+use crate::evidence::encode_rel_path;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use vem_core::model::*;
 use vem_core::sink::ParseSink;
@@ -27,13 +28,15 @@ pub struct DbSink<'a> {
     source_file_id: i64,
     next_ordinal: HashMap<i64, i64>,
     pub counts: SinkCounts,
+    /// `name/version` of every parser whose provenance this sink stored (for the ingest audit entry).
+    pub parsers: BTreeSet<String>,
     /// First error hit inside a sink method; surfaced by `ingest` after `parse_file` returns.
     pub error: Option<CaseError>,
 }
 
 impl<'a> DbSink<'a> {
     pub fn new(conn: &'a Connection, case_dir: &'a Path, root_id: i64, store_id: i64, source_file_id: i64) -> Self {
-        Self { conn, case_dir, root_id, store_id, source_file_id, next_ordinal: HashMap::new(), counts: SinkCounts::default(), error: None }
+        Self { conn, case_dir, root_id, store_id, source_file_id, next_ordinal: HashMap::new(), counts: SinkCounts::default(), parsers: BTreeSet::new(), error: None }
     }
 
     fn fail<T: Default>(&mut self, r: Result<T, CaseError>) -> T {
@@ -48,7 +51,8 @@ impl<'a> DbSink<'a> {
         }
     }
 
-    fn insert_provenance(&self, p: &Provenance) -> Result<i64, CaseError> {
+    fn insert_provenance(&mut self, p: &Provenance) -> Result<i64, CaseError> {
+        self.parsers.insert(format!("{}/{}", p.parser_name, p.parser_version));
         self.conn.execute(
             "INSERT INTO provenance (source_file_id, byte_offset, byte_length, record_index, content_sha256, parser_name, parser_version, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![p.source_file.0, p.byte_offset as i64, p.byte_length as i64, p.record_index as i64, p.content_sha256, p.parser_name, p.parser_version, p.origin.as_str()],
@@ -161,9 +165,13 @@ impl<'a> DbSink<'a> {
     }
 
     fn try_anomaly(&mut self, a: &AnomalyDraft) -> Result<(), CaseError> {
+        let prov_id = match &a.provenance {
+            Some(p) => Some(self.insert_provenance(p)?),
+            None => None,
+        };
         self.conn.execute(
-            "INSERT INTO anomalies (root_id, store_id, source_file_id, session_id, kind, severity, byte_offset, message, details) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![self.root_id, self.store_id, a.source_file.map(|h| h.0).or(Some(self.source_file_id)), a.session.map(|h| h.0), a.kind.as_str(), a.severity.as_str(), a.byte_offset.map(|o| o as i64), a.message, a.details.to_string()],
+            "INSERT INTO anomalies (root_id, store_id, source_file_id, session_id, kind, severity, byte_offset, provenance_id, message, details) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![self.root_id, self.store_id, a.source_file.map(|h| h.0).or(Some(self.source_file_id)), a.session.map(|h| h.0), a.kind.as_str(), a.severity.as_str(), a.byte_offset.map(|o| o as i64), prov_id, a.message, a.details.to_string()],
         )?;
         self.counts.anomalies += 1;
         Ok(())
@@ -191,6 +199,19 @@ impl<'a> ParseSink for DbSink<'a> {
             .ok()
             .flatten()
             .map(SessionHandle)
+    }
+    fn find_source_file(&self, rel_path: &Path) -> Option<SourceFileHandle> {
+        let (rel, encoded) = encode_rel_path(rel_path);
+        self.conn
+            .query_row(
+                "SELECT id FROM source_files WHERE root_id = ?1 AND rel_path = ?2 AND rel_path_encoded = ?3 AND kind = 'file' ORDER BY version DESC LIMIT 1",
+                params![self.root_id, rel, encoded],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .map(SourceFileHandle)
     }
     fn message(&mut self, session: SessionHandle, draft: MessageDraft) -> MessageHandle {
         let r = self.try_message(session, &draft);

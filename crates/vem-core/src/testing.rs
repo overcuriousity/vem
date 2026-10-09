@@ -44,6 +44,9 @@ impl ParseSink for VecSink {
     fn find_session(&self, harness_session_id: &str) -> Option<SessionHandle> {
         self.sessions.iter().find(|(_, s)| s.harness_session_id == harness_session_id).map(|(h, _)| *h)
     }
+    fn find_source_file(&self, _rel_path: &std::path::Path) -> Option<SourceFileHandle> {
+        None
+    }
     fn message(&mut self, session: SessionHandle, draft: MessageDraft) -> MessageHandle {
         let h = MessageHandle(self.messages.len() as i64 + 1);
         self.messages.push((session, h, draft));

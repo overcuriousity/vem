@@ -24,4 +24,7 @@ pub enum CaseError {
     NoAdapter(String),
     #[error("export: {0}")]
     Export(String),
+    #[error("integrity: {0}")]
+    IntegrityMismatch(String),
+
 }

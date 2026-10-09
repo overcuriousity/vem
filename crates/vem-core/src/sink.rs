@@ -2,12 +2,16 @@
 //! inserts; tests implement it with vectors.
 
 use crate::model::*;
+use std::path::Path;
 
 pub trait ParseSink {
     fn session(&mut self, draft: SessionDraft) -> SessionHandle;
     fn update_session(&mut self, session: SessionHandle, update: SessionUpdate);
     /// Looks a session up by its harness id across everything parsed so far in this root.
     fn find_session(&self, harness_session_id: &str) -> Option<SessionHandle>;
+    /// Looks a file up in this root's manifest by its path relative to the root (latest version).
+    /// `None` when the manifest does not list it (or, in tests, when there is no manifest).
+    fn find_source_file(&self, rel_path: &Path) -> Option<SourceFileHandle>;
     fn message(&mut self, session: SessionHandle, draft: MessageDraft) -> MessageHandle;
     fn tool_call(&mut self, session: SessionHandle, draft: ToolCallDraft) -> ToolCallHandle;
     fn observation(&mut self, session: SessionHandle, draft: ObservationDraft);

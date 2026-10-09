@@ -36,6 +36,9 @@ pub fn evidence_add(case_dir: &Path, path: &Path, label: String, host: Option<St
         if !r.absent.is_empty() {
             s.push_str(&format!("  absent: {}\n", r.absent.join(", ")));
         }
+        if !r.symlinks.is_empty() {
+            s.push_str(&format!("  symbolic links (recorded, not followed): {}\n", r.symlinks.join(", ")));
+        }
         if !r.unreadable.is_empty() {
             s.push_str(&format!("  unreadable: {}\n", r.unreadable.join(", ")));
         }
@@ -54,8 +57,8 @@ pub fn ingest(case_dir: &Path, root: Option<i64>, json: bool) -> Result<(), Case
     let report = vem_case::ingest::ingest(&mut case, root)?;
     emit(json, &report, |r| {
         format!(
-            "ingest done\n  files_parsed: {}\n  files_failed: {}\n  files_skipped: {}\n  sessions: {}\n  messages: {}\n  tool_calls: {}\n  observations: {}\n  anomalies: {}",
-            r.files_parsed, r.files_failed, r.files_skipped, r.sessions, r.messages, r.tool_calls, r.observations, r.anomalies
+            "ingest done\n  files_parsed: {}\n  files_inventoried: {}\n  files_failed: {}\n  files_skipped: {}\n  files_drifted: {}\n  sessions: {}\n  messages: {}\n  tool_calls: {}\n  observations: {}\n  anomalies: {}",
+            r.files_parsed, r.files_inventoried, r.files_failed, r.files_skipped, r.files_drifted, r.sessions, r.messages, r.tool_calls, r.observations, r.anomalies
         )
     })
 }
@@ -130,7 +133,9 @@ pub fn inventory(case_dir: &Path, json: bool) -> Result<(), CaseError> {
                 s.push_str(&format!("  absent stores: {}\n", r.absent.join(", ")));
             }
             for f in &r.files {
-                s.push_str(&format!("  file {} {} {} bytes sha256={} {}{}\n", f.id, f.rel_path, f.size, &f.sha256[..12], f.parse_status, f.parse_error.as_ref().map(|e| format!(" ({e})")).unwrap_or_default()));
+                let link = f.link_target.as_ref().map(|t| format!(" symlink -> {t} (not followed)")).unwrap_or_default();
+                let version = if f.version > 1 { format!(" v{}", f.version) } else { String::new() };
+                s.push_str(&format!("  file {} {}{}{} {} bytes sha256={} {}{}\n", f.id, f.rel_path, version, link, f.size, &f.sha256[..12], f.parse_status, f.parse_error.as_ref().map(|e| format!(" ({e})")).unwrap_or_default()));
             }
         }
         s.push_str(&format!("anomalies ({}):\n", inv.anomalies.len()));
