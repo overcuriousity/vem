@@ -42,7 +42,16 @@ impl HarnessAdapter for ClaudeCodeAdapter {
         discover::discover(root)
     }
 
-    fn parse_file(&self, _ctx: &FileContext<'_>, _sink: &mut dyn ParseSink) -> Result<(), ParseError> {
-        Ok(())
+    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<(), ParseError> {
+        match ctx.store.kind.as_str() {
+            STORE_PROJECTS => {
+                if transcript::classify_path(ctx.rel_path).is_some() {
+                    transcript::parse_transcript(ctx, sink)
+                } else {
+                    Ok(()) // meta.json and tool-results/*.txt are inventoried and retained, not parsed
+                }
+            }
+            _ => Ok(()),
+        }
     }
 }
