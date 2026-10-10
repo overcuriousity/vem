@@ -176,7 +176,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: vem-*
           merge-multiple: true
+      - name: Only release files in dist
+        run: test -z "$(find dist -mindepth 1 -type d)"
       - name: Checksums
         run: cd dist && cat *.sha256 > SHA256SUMS && cat SHA256SUMS
       - name: Publish
