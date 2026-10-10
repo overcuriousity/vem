@@ -1,7 +1,7 @@
 # vem plan 2 — Web API and Conversation UI: Design
 
 Date: 2026-10-09
-Status: approved in brainstorming, pending written-spec review
+Status: implemented (plan 2)
 Parent spec: `2026-10-08-vem-design.md` (this document refines its §8 and the §4, §6.1 and §7 items deferred by plan 1)
 
 ## 1. Goal and scope
