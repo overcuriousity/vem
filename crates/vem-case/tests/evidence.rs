@@ -300,6 +300,7 @@ fn the_case_and_its_exports_stay_out_of_evidence_roots() {
         attach(&mut inner, &ev, opts("x")),
         Err(CaseError::EvidenceOverlapsCase { .. })
     ));
+    drop(inner); // Windows cannot delete the open case database.
     std::fs::remove_dir_all(ev.join("zcase")).unwrap();
     // Evidence inside the case directory.
     let mut case = Case::create(&tmp.path().join("c"), "n", None).unwrap();

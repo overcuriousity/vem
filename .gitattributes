@@ -1,0 +1,4 @@
+# Fixtures are evidence: offsets and hashes depend on the exact bytes, so no
+# line-ending conversion on checkout.
+fixtures/** -text
+*.snap -text
