@@ -15,6 +15,12 @@ Linux and macOS (x86_64, arm64), into `~/.local/bin`, checksum-verified:
 curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | sh
 ```
 
+Settings go to `sh`, after the pipe:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | VEM_VERSION=v0.1.0 sh
+```
+
 Pin a version with `VEM_VERSION=v0.1.0`, take the latest `main` build with
 `VEM_VERSION=nightly`, change the target with `VEM_INSTALL_DIR=/path`. Windows and manual
 downloads: [releases](https://github.com/overcuriousity/vem/releases). Every release asset has

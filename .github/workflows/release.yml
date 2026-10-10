@@ -5,6 +5,10 @@
 #     release (marked latest). Bumping `version` in Cargo.toml is how a release is cut.
 #   - Otherwise the build replaces the rolling `nightly` prerelease.
 #
+# Nothing is published unless lint and tests (ci.yml) pass on the same commit.
+# If tag v<version> exists but has no release, publish fails rather than reuse the tag:
+# the tag may point at a different commit than the one just built.
+#
 # Asset names carry no version (vem-<target>.tar.gz / .zip) so that
 # releases/latest/download/<asset> and install.sh stay stable.
 name: Release
@@ -29,6 +33,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  ci:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/ci.yml
+
   build:
     strategy:
       fail-fast: false
@@ -103,7 +111,7 @@ jobs:
 
   publish:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: [build, installer]
+    needs: [ci, build, installer]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -130,6 +138,9 @@ jobs:
               --target "$GITHUB_SHA" --prerelease --latest=false \
               --title "nightly ($(git rev-parse --short HEAD))" \
               --notes "Rolling build of main at $GITHUB_SHA. Not a release; install a tagged version for casework."
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag exists but has no release; delete the tag or bump the version" >&2
+            exit 1
           else
             gh release create "$tag" dist/* \
               --target "$GITHUB_SHA" --latest \
