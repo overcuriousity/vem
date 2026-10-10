@@ -1,0 +1,14 @@
+.hexview { font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow-x: auto; }
+.hexview .hex-row { display: flex; gap: 16px; white-space: pre; }
+.hexview .hex-offset { color: var(--muted); }
+.hexview .hex-ascii { color: var(--fg); }
+table.diff { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; }
+table.diff td { padding: 0 6px; white-space: pre-wrap; word-break: break-all; vertical-align: top; }
+table.diff td.ln { color: var(--muted); text-align: right; width: 1%; white-space: nowrap; user-select: none; }
+table.diff tr.hunk td { color: var(--muted); background: var(--meta-bg); }
+.diff-insert { background: var(--stored-bg); }
+.diff-delete { background: var(--danger-bg); }
+pre.json { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.masked button, .copyhash button { margin-left: 4px; font-size: 11px; }
+.truncated button { display: block; margin-top: 4px; }
+.integrity { font-weight: 700; }
