@@ -58,7 +58,7 @@ fn discovers_stores_and_reports_absent_ones() {
     let files: Vec<String> = projects
         .files
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
         .collect();
     assert!(files.contains(
         &"projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001.jsonl".to_string()

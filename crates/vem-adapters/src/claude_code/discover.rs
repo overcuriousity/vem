@@ -124,7 +124,13 @@ pub fn list_files(root: &Path, rel: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    out.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+    // Sort on the `/`-joined form so ingest order does not depend on the examiner's OS.
+    out.sort_by_cached_key(|p| {
+        p.components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+    });
     out
 }
 
