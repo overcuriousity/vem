@@ -1,17 +1,26 @@
 use std::path::{Path, PathBuf};
+use vem_adapters::claude_code::{
+    ClaudeCodeAdapter, STORE_FILE_HISTORY, STORE_HISTORY, STORE_PROJECTS,
+};
 use vem_core::adapter::HarnessAdapter;
 use vem_core::model::Harness;
-use vem_adapters::claude_code::{ClaudeCodeAdapter, STORE_FILE_HISTORY, STORE_HISTORY, STORE_PROJECTS};
 
 fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/claude-code/basic").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/claude-code/basic")
+        .canonicalize()
+        .unwrap()
 }
 
 #[test]
 fn identifies_fixture_as_claude_code_by_content() {
     let id = ClaudeCodeAdapter.identify(&fixture()).expect("identified");
     assert_eq!(id.harness, Harness::ClaudeCode);
-    assert!(id.evidence.iter().any(|e| e.contains("parentUuid")), "{:?}", id.evidence);
+    assert!(
+        id.evidence.iter().any(|e| e.contains("parentUuid")),
+        "{:?}",
+        id.evidence
+    );
 }
 
 #[test]
@@ -34,7 +43,10 @@ fn unrelated_directory_is_not_identified() {
 fn discovers_stores_and_reports_absent_ones() {
     let d = ClaudeCodeAdapter.discover(&fixture());
     let kinds: Vec<&str> = d.stores.iter().map(|s| s.kind.as_str()).collect();
-    assert_eq!(kinds[0], STORE_PROJECTS, "projects store must come first so sidecars can find sessions");
+    assert_eq!(
+        kinds[0], STORE_PROJECTS,
+        "projects store must come first so sidecars can find sessions"
+    );
     assert!(kinds.contains(&STORE_HISTORY));
     assert!(kinds.contains(&STORE_FILE_HISTORY));
     assert!(kinds.contains(&"claude:shell-snapshots"));
@@ -43,11 +55,20 @@ fn discovers_stores_and_reports_absent_ones() {
     assert!(d.absent.contains(&"claude:plans".to_string()));
     let projects = &d.stores[0];
     assert_eq!(projects.generation.as_deref(), Some("2.1.294"));
-    let files: Vec<String> = projects.files.iter().map(|p| p.to_string_lossy().to_string()).collect();
-    assert!(files.contains(&"projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001.jsonl".to_string()));
+    let files: Vec<String> = projects
+        .files
+        .iter()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .collect();
+    assert!(files.contains(
+        &"projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001.jsonl".to_string()
+    ));
     assert!(files.contains(&"projects/-home-alice-proj/0f0f0f0f-0000-4000-8000-000000000001/subagents/agent-0123456789abcdef.jsonl".to_string()));
     assert!(files.contains(&"projects/-home-alice-proj/22222222-0000-4000-8000-000000000002.jsonl.orphaned-1759221000000".to_string()));
-    assert!(files.windows(2).all(|w| w[0] <= w[1]), "files must be sorted");
+    assert!(
+        files.windows(2).all(|w| w[0] <= w[1]),
+        "files must be sorted"
+    );
 }
 
 #[test]

@@ -16,8 +16,15 @@ pub const HISTORY_PARSER_VERSION: &str = "1";
 
 fn epoch_ms(v: Option<&Value>) -> Timestamp {
     match v {
-        Some(Value::Number(n)) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).and_then(Timestamp::stored_epoch_ms),
-        Some(Value::String(s)) => s.parse::<i64>().ok().and_then(Timestamp::stored_epoch_ms).or_else(|| Timestamp::stored(s)),
+        Some(Value::Number(n)) => n
+            .as_i64()
+            .or_else(|| n.as_f64().map(|f| f as i64))
+            .and_then(Timestamp::stored_epoch_ms),
+        Some(Value::String(s)) => s
+            .parse::<i64>()
+            .ok()
+            .and_then(Timestamp::stored_epoch_ms)
+            .or_else(|| Timestamp::stored(s)),
         _ => None,
     }
     .unwrap_or_else(Timestamp::absent)
@@ -28,7 +35,10 @@ fn epoch_ms(v: Option<&Value>) -> Timestamp {
 /// but not parsed yet fails the file, so it is retried after the transcript. A session id with no transcript is deletion evidence:
 /// it gets a `sidecar_only` session holding one `user` message per history line (so no prompt or paste is
 /// lost), and one `missing_transcript` anomaly linked to that session.
-pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError> {
+pub fn parse_history(
+    ctx: &FileContext<'_>,
+    sink: &mut dyn ParseSink,
+) -> Result<ParseOutcome, ParseError> {
     let file = File::open(&ctx.abs_path)?;
     let mut sidecar: HashMap<String, SessionHandle> = HashMap::new();
     let mut records = 0u64;
@@ -42,7 +52,10 @@ pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<
                 source_file: Some(ctx.handle),
                 session: None,
                 byte_offset: Some(rec.offset),
-                message: format!("history.jsonl line {} of {} bytes exceeds the size cap and was skipped", rec.index, rec.length),
+                message: format!(
+                    "history.jsonl line {} of {} bytes exceeds the size cap and was skipped",
+                    rec.index, rec.length
+                ),
                 details: json!({ "length": rec.length }),
                 provenance: None,
             });
@@ -58,26 +71,79 @@ pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<
             parser_version: HISTORY_PARSER_VERSION.to_string(),
             origin: ProvOrigin::Stored,
         };
-        let anomaly = |sink: &mut dyn ParseSink, kind, severity, session: Option<SessionHandle>, message: String, details: Value| {
-            sink.anomaly(AnomalyDraft { kind, severity, source_file: Some(ctx.handle), session, byte_offset: Some(rec.offset), message, details, provenance: Some(prov.clone()) })
+        let anomaly = |sink: &mut dyn ParseSink,
+                       kind,
+                       severity,
+                       session: Option<SessionHandle>,
+                       message: String,
+                       details: Value| {
+            sink.anomaly(AnomalyDraft {
+                kind,
+                severity,
+                source_file: Some(ctx.handle),
+                session,
+                byte_offset: Some(rec.offset),
+                message,
+                details,
+                provenance: Some(prov.clone()),
+            })
         };
         let (text, lossy) = decode_record(&rec.bytes);
         if lossy {
-            anomaly(sink, AnomalyKind::InvalidUtf8, Severity::Info, None, format!("history.jsonl line {} is not valid UTF-8; decoded lossily", rec.index), json!({ "length": rec.length }));
+            anomaly(
+                sink,
+                AnomalyKind::InvalidUtf8,
+                Severity::Info,
+                None,
+                format!(
+                    "history.jsonl line {} is not valid UTF-8; decoded lossily",
+                    rec.index
+                ),
+                json!({ "length": rec.length }),
+            );
         }
         let v: Value = match serde_json::from_str(&text) {
             Ok(v) => v,
             Err(e) => {
-                let (kind, severity) = if rec.terminated { (AnomalyKind::MalformedRecord, Severity::Error) } else { (AnomalyKind::TruncatedLine, Severity::Warning) };
-                anomaly(sink, kind, severity, None, format!("history.jsonl line {} is not valid JSON: {e}", rec.index), json!({}));
+                let (kind, severity) = if rec.terminated {
+                    (AnomalyKind::MalformedRecord, Severity::Error)
+                } else {
+                    (AnomalyKind::TruncatedLine, Severity::Warning)
+                };
+                anomaly(
+                    sink,
+                    kind,
+                    severity,
+                    None,
+                    format!("history.jsonl line {} is not valid JSON: {e}", rec.index),
+                    json!({}),
+                );
                 continue;
             }
         };
-        let session_id = v.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+        let session_id = v
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
         let timestamp = epoch_ms(v.get("timestamp"));
-        let pasted = v.get("pastedContents").and_then(Value::as_object).map(|m| !m.is_empty()).unwrap_or(false);
+        let pasted = v
+            .get("pastedContents")
+            .and_then(Value::as_object)
+            .map(|m| !m.is_empty())
+            .unwrap_or(false);
         if session_id.is_empty() {
-            anomaly(sink, AnomalyKind::MalformedRecord, Severity::Info, None, format!("history.jsonl line {} has no sessionId; kept here", rec.index), json!({ "record": v }));
+            anomaly(
+                sink,
+                AnomalyKind::MalformedRecord,
+                Severity::Info,
+                None,
+                format!(
+                    "history.jsonl line {} has no sessionId; kept here",
+                    rec.index
+                ),
+                json!({ "record": v }),
+            );
             continue;
         }
         let session = match sidecar.get(&session_id).copied() {
@@ -91,7 +157,9 @@ pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<
                     if sink.find_unparsed_transcript(&session_id).is_some() {
                         // The transcript is in the manifest but has not been parsed (it failed, or comes later);
                         // it is not deletion evidence. Fail so history.jsonl is retried after the transcript.
-                        return Err(ParseError::Invalid(format!("transcript of session {session_id} has not been parsed yet")));
+                        return Err(ParseError::Invalid(format!(
+                            "transcript of session {session_id} has not been parsed yet"
+                        )));
                     }
                     let h = sink.session(SessionDraft {
                         harness_session_id: session_id.clone(),
@@ -149,9 +217,19 @@ pub fn parse_history(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<
 
 /// One prompt of a `sidecar_only` session. Provenance is the history line; origin is `derived` because
 /// the conversation record itself is gone and this message is rebuilt from the prompt history.
-fn history_message(sink: &mut dyn ParseSink, session: SessionHandle, v: &Value, timestamp: &Timestamp, prov: &Provenance) {
+fn history_message(
+    sink: &mut dyn ParseSink,
+    session: SessionHandle,
+    v: &Value,
+    timestamp: &Timestamp,
+    prov: &Provenance,
+) {
     let attributes = v.as_object().cloned().unwrap_or_default();
-    let blocks = v.get("display").and_then(Value::as_str).map(|d| vec![BlockDraft::text(d)]).unwrap_or_default();
+    let blocks = v
+        .get("display")
+        .and_then(Value::as_str)
+        .map(|d| vec![BlockDraft::text(d)])
+        .unwrap_or_default();
     sink.message(
         session,
         MessageDraft {
@@ -163,7 +241,10 @@ fn history_message(sink: &mut dyn ParseSink, session: SessionHandle, v: &Value, 
             model: None,
             attributes,
             blocks,
-            provenance: Provenance { origin: ProvOrigin::Derived, ..prov.clone() },
+            provenance: Provenance {
+                origin: ProvOrigin::Derived,
+                ..prov.clone()
+            },
         },
     );
 }

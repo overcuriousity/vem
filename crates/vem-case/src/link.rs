@@ -20,7 +20,9 @@ pub fn link_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseError> {
              JOIN sessions s ON s.id = c.session_id JOIN stores st ON st.id = s.store_id
              WHERE st.root_id = ?1 AND c.join_status = 'unmatched' ORDER BY c.id",
         )?;
-        let rows = stmt.query_map([root_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        let rows = stmt.query_map([root_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
         rows.collect::<Result<_, _>>()?
     };
     for (claim_id, session_id, scheme, claimed_id) in claims {
@@ -47,11 +49,17 @@ pub fn link_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseError> {
                 if scheme == "claude:spawning_tool_use_id" {
                     conn.execute("UPDATE sessions SET parent_session_id = ?2 WHERE id = ?1 AND parent_session_id IS NULL", params![session_id, hits[0]])?;
                 } else if scheme == "claude:origin_session_id" {
-                    conn.execute("UPDATE sessions SET kind = 'resumed' WHERE id = ?1 AND kind = 'primary'", [session_id])?;
+                    conn.execute(
+                        "UPDATE sessions SET kind = 'resumed' WHERE id = ?1 AND kind = 'primary'",
+                        [session_id],
+                    )?;
                 }
             }
             _ => {
-                conn.execute("UPDATE identity_claims SET join_status = 'ambiguous' WHERE id = ?1", [claim_id])?;
+                conn.execute(
+                    "UPDATE identity_claims SET join_status = 'ambiguous' WHERE id = ?1",
+                    [claim_id],
+                )?;
             }
         }
     }
@@ -62,7 +70,9 @@ pub fn link_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseError> {
              WHERE st.root_id = ?1 AND s.kind = 'subagent' AND s.parent_session_id IS NULL
                AND NOT EXISTS (SELECT 1 FROM anomalies a WHERE a.session_id = s.id AND a.kind = 'unlinked_subagent')",
         )?;
-        let rows = stmt.query_map([root_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        let rows = stmt.query_map([root_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
         rows.collect::<Result<_, _>>()?
     };
     for (sid, hid, store_id, file_id) in unlinked {
@@ -92,11 +102,21 @@ pub fn finalize_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseErro
                 (Some((f, fo)), Some((l, lo))) => (Some(f), fo, Some(l), lo),
                 _ => {
                     let mtime: Option<String> = match file_id {
-                        Some(id) => conn.query_row("SELECT mtime FROM source_files WHERE id = ?1", [id], |r| r.get(0)).optional()?.flatten(),
+                        Some(id) => conn
+                            .query_row("SELECT mtime FROM source_files WHERE id = ?1", [id], |r| {
+                                r.get(0)
+                            })
+                            .optional()?
+                            .flatten(),
                         None => None,
                     };
                     match mtime {
-                        Some(m) => (Some(m.clone()), "file_mtime".to_string(), Some(m), "file_mtime".to_string()),
+                        Some(m) => (
+                            Some(m.clone()),
+                            "file_mtime".to_string(),
+                            Some(m),
+                            "file_mtime".to_string(),
+                        ),
                         None => (None, "absent".to_string(), None, "absent".to_string()),
                     }
                 }

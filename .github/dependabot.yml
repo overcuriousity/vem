@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # arrow and parquet move in lockstep; one PR keeps them on the same major.
+      arrow:
+        patterns: ["arrow*", "parquet"]
+      minor-and-patch:
+        update-types: [minor, patch]
+        exclude-patterns: ["arrow*", "parquet"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

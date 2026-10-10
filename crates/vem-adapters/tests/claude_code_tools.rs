@@ -9,21 +9,44 @@ use vem_core::testing::VecSink;
 fn pairs_tool_uses_with_results() {
     let sink = parse_fixture(S1_FILE);
     assert_eq!(sink.tool_calls.len(), 4);
-    let names: Vec<&str> = sink.tool_calls.iter().map(|(_, _, t)| t.name.as_str()).collect();
+    let names: Vec<&str> = sink
+        .tool_calls
+        .iter()
+        .map(|(_, _, t)| t.name.as_str())
+        .collect();
     assert_eq!(names, vec!["Bash", "Write", "Edit", "Agent"]);
     let cats: Vec<ToolCategory> = sink.tool_calls.iter().map(|(_, _, t)| t.category).collect();
-    assert_eq!(cats, vec![ToolCategory::Shell, ToolCategory::FileWrite, ToolCategory::FileEdit, ToolCategory::Agent]);
+    assert_eq!(
+        cats,
+        vec![
+            ToolCategory::Shell,
+            ToolCategory::FileWrite,
+            ToolCategory::FileEdit,
+            ToolCategory::Agent
+        ]
+    );
     let (_, _, bash) = &sink.tool_calls[0];
     assert!(bash.tool_result.is_some());
     assert_eq!(bash.result_text.as_deref(), Some("README.md\nsrc\n"));
     assert_eq!(bash.input["command"], "ls -la");
     assert!(!bash.is_error);
-    assert_eq!(bash.started.value.as_deref(), Some("2026-09-30T10:00:01.000Z"));
-    assert_eq!(bash.ended.value.as_deref(), Some("2026-09-30T10:00:02.000Z"));
-    assert_eq!(bash.result_payload.as_ref().unwrap()["stdout"], "README.md\nsrc\n");
+    assert_eq!(
+        bash.started.value.as_deref(),
+        Some("2026-09-30T10:00:01.000Z")
+    );
+    assert_eq!(
+        bash.ended.value.as_deref(),
+        Some("2026-09-30T10:00:02.000Z")
+    );
+    assert_eq!(
+        bash.result_payload.as_ref().unwrap()["stdout"],
+        "README.md\nsrc\n"
+    );
     let (_, _, agent) = &sink.tool_calls[3];
     assert_eq!(agent.result_text.as_deref(), Some("Found settings.json"));
-    assert!(sink.anomalies_of(AnomalyKind::UnpairedToolResult).is_empty());
+    assert!(sink
+        .anomalies_of(AnomalyKind::UnpairedToolResult)
+        .is_empty());
 }
 
 #[test]
@@ -33,15 +56,31 @@ fn derives_command_file_and_subagent_observations() {
     assert_eq!(cmd.len(), 1);
     assert_eq!(cmd[0].command.as_deref(), Some("ls -la"));
     assert_eq!(cmd[0].confidence, Confidence::High);
-    assert_eq!(cmd[0].timestamp.value.as_deref(), Some("2026-09-30T10:00:01.000Z"), "stamped when the command was issued (tool_use time)");
-    assert!(matches!(cmd[0].derived_from, Derivation::ToolCall(ToolCallHandle(1))));
+    assert_eq!(
+        cmd[0].timestamp.value.as_deref(),
+        Some("2026-09-30T10:00:01.000Z"),
+        "stamped when the command was issued (tool_use time)"
+    );
+    assert!(matches!(
+        cmd[0].derived_from,
+        Derivation::ToolCall(ToolCallHandle(1))
+    ));
 
     let written = sink.observations_of(ObservationKind::FileWritten);
     assert_eq!(written.len(), 1);
-    assert_eq!(written[0].path.as_deref(), Some("/home/alice/proj/notes.md"));
-    assert_eq!(written[0].after_blob.as_deref(), Some(sha256_hex(b"# Notes\n").as_str()));
+    assert_eq!(
+        written[0].path.as_deref(),
+        Some("/home/alice/proj/notes.md")
+    );
+    assert_eq!(
+        written[0].after_blob.as_deref(),
+        Some(sha256_hex(b"# Notes\n").as_str())
+    );
     assert_eq!(written[0].before_blob, None);
-    assert_eq!(sink.blobs.get(&sha256_hex(b"# Notes\n")).unwrap(), b"# Notes\n");
+    assert_eq!(
+        sink.blobs.get(&sha256_hex(b"# Notes\n")).unwrap(),
+        b"# Notes\n"
+    );
 
     let edited: Vec<&ObservationDraft> = sink
         .observations_of(ObservationKind::FileEdited)
@@ -49,8 +88,14 @@ fn derives_command_file_and_subagent_observations() {
         .filter(|o| matches!(o.derived_from, Derivation::ToolCall(_)))
         .collect();
     assert_eq!(edited.len(), 1);
-    assert_eq!(edited[0].before_blob.as_deref(), Some(sha256_hex(b"# Notes\n").as_str()));
-    assert_eq!(edited[0].after_blob.as_deref(), Some(sha256_hex(b"# Notes\n\n- first\n").as_str()));
+    assert_eq!(
+        edited[0].before_blob.as_deref(),
+        Some(sha256_hex(b"# Notes\n").as_str())
+    );
+    assert_eq!(
+        edited[0].after_blob.as_deref(),
+        Some(sha256_hex(b"# Notes\n\n- first\n").as_str())
+    );
     assert_eq!(edited[0].details["replaceAll"], false);
     assert!(edited[0].details["structuredPatch"].is_array());
 
@@ -86,14 +131,21 @@ fn unpaired_result_is_an_anomaly_and_unfinished_use_is_a_result_less_call() {
     let a = sink.anomalies_of(AnomalyKind::UnpairedToolResult);
     assert_eq!(a.len(), 1);
     assert_eq!(a[0].details["tool_use_id"], "toolu_elsewhere");
-    let prov = a[0].provenance.as_ref().expect("record-level anomaly carries provenance");
+    let prov = a[0]
+        .provenance
+        .as_ref()
+        .expect("record-level anomaly carries provenance");
     assert_eq!((prov.byte_offset, prov.record_index), (0, 0));
     assert_eq!(sink.tool_calls.len(), 1);
     let (_, _, open) = &sink.tool_calls[0];
     assert_eq!(open.name, "Bash");
     assert!(open.tool_result.is_none());
     assert_eq!(open.ended, Timestamp::absent());
-    assert_eq!(sink.observations_of(ObservationKind::CommandExecuted).len(), 1, "a command we saw issued is still an observation");
+    assert_eq!(
+        sink.observations_of(ObservationKind::CommandExecuted).len(),
+        1,
+        "a command we saw issued is still an observation"
+    );
 }
 
 #[test]
@@ -120,8 +172,14 @@ fn read_glob_web_and_multiedit_observations() {
     assert_eq!(urls[0].path.as_deref(), Some("https://example.org/x"));
     let edits = sink.observations_of(ObservationKind::FileEdited);
     assert_eq!(edits.len(), 2);
-    assert_eq!(edits[1].before_blob.as_deref(), Some(sha256_hex(b"c").as_str()));
-    assert_eq!(edits[1].after_blob.as_deref(), Some(sha256_hex(b"d").as_str()));
+    assert_eq!(
+        edits[1].before_blob.as_deref(),
+        Some(sha256_hex(b"c").as_str())
+    );
+    assert_eq!(
+        edits[1].after_blob.as_deref(),
+        Some(sha256_hex(b"d").as_str())
+    );
 }
 
 #[test]
@@ -137,6 +195,15 @@ fn repeated_tool_use_id_keeps_the_displaced_use_as_a_result_less_call() {
     );
     let mut sink = VecSink::default();
     parse_file_into(tmp.path(), &rel, &mut sink);
-    let cmds: Vec<(&str, bool)> = sink.tool_calls.iter().map(|(_, _, t)| (t.input["command"].as_str().unwrap(), t.tool_result.is_some())).collect();
+    let cmds: Vec<(&str, bool)> = sink
+        .tool_calls
+        .iter()
+        .map(|(_, _, t)| {
+            (
+                t.input["command"].as_str().unwrap(),
+                t.tool_result.is_some(),
+            )
+        })
+        .collect();
     assert_eq!(cmds, vec![("first", false), ("second", true)]);
 }

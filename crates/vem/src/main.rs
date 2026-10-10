@@ -6,7 +6,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "vem", version, about = "Forensic analysis of agentic AI harness traces")]
+#[command(
+    name = "vem",
+    version,
+    about = "Forensic analysis of agentic AI harness traces"
+)]
 struct Cli {
     /// Print reports as JSON instead of text.
     #[arg(long, global = true)]
@@ -123,21 +127,60 @@ pub enum ExportFormat {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Case { cmd: CaseCmd::New { dir, name, examiner } } => commands::case_new(&dir, &name, examiner.as_deref(), cli.json),
-        Command::Evidence { cmd: EvidenceCmd::Add { case, path, label, host, user, os, harness, no_retain } } => {
-            commands::evidence_add(&case, &path, label, host, user, os, harness.map(Into::into), !no_retain, cli.json)
-        }
-        Command::Evidence { cmd: EvidenceCmd::List { case } } => commands::evidence_list(&case, cli.json),
+        Command::Case {
+            cmd:
+                CaseCmd::New {
+                    dir,
+                    name,
+                    examiner,
+                },
+        } => commands::case_new(&dir, &name, examiner.as_deref(), cli.json),
+        Command::Evidence {
+            cmd:
+                EvidenceCmd::Add {
+                    case,
+                    path,
+                    label,
+                    host,
+                    user,
+                    os,
+                    harness,
+                    no_retain,
+                },
+        } => commands::evidence_add(
+            &case,
+            &path,
+            label,
+            host,
+            user,
+            os,
+            harness.map(Into::into),
+            !no_retain,
+            cli.json,
+        ),
+        Command::Evidence {
+            cmd: EvidenceCmd::List { case },
+        } => commands::evidence_list(&case, cli.json),
         Command::Ingest { case, root } => commands::ingest(&case, root, cli.json),
         Command::Verify { case } => commands::verify(&case, cli.json),
         Command::Inventory { case } => commands::inventory(&case, cli.json),
         Command::Sessions { case, root, kind } => commands::sessions(&case, root, kind, cli.json),
-        Command::Export { case, format, root, session, output } => commands::export(&case, format, root, session, &output, cli.json),
+        Command::Export {
+            case,
+            format,
+            root,
+            session,
+            output,
+        } => commands::export(&case, format, root, session, &output, cli.json),
     };
     match result {
         Ok(()) => {}
         Err(vem_case::CaseError::Unrecognized { path, hint }) => {
-            eprintln!("error: {} is not recognized as a harness directory{}", path.display(), hint);
+            eprintln!(
+                "error: {} is not recognized as a harness directory{}",
+                path.display(),
+                hint
+            );
             std::process::exit(2);
         }
         Err(e) => {

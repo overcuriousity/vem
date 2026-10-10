@@ -53,11 +53,14 @@ pub fn normalize_rfc3339(raw: &str) -> Option<String> {
 }
 
 pub fn normalize_epoch_ms(ms: i64) -> Option<String> {
-    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms).map(|d| d.format(TS_FORMAT).to_string())
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+        .map(|d| d.format(TS_FORMAT).to_string())
 }
 
 pub fn format_system_time(t: SystemTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from(t).format(TS_FORMAT).to_string()
+    chrono::DateTime::<chrono::Utc>::from(t)
+        .format(TS_FORMAT)
+        .to_string()
 }
 
 /// A timestamp plus where it came from. `value` is always in `TS_FORMAT` when present.
@@ -68,17 +71,33 @@ pub struct Timestamp {
 }
 
 impl Timestamp {
-    pub fn absent() -> Self { Self { value: None, origin: TsOrigin::Absent } }
+    pub fn absent() -> Self {
+        Self {
+            value: None,
+            origin: TsOrigin::Absent,
+        }
+    }
     pub fn stored(raw: &str) -> Option<Self> {
-        normalize_rfc3339(raw).map(|v| Self { value: Some(v), origin: TsOrigin::Stored })
+        normalize_rfc3339(raw).map(|v| Self {
+            value: Some(v),
+            origin: TsOrigin::Stored,
+        })
     }
     pub fn stored_epoch_ms(ms: i64) -> Option<Self> {
-        normalize_epoch_ms(ms).map(|v| Self { value: Some(v), origin: TsOrigin::Stored })
+        normalize_epoch_ms(ms).map(|v| Self {
+            value: Some(v),
+            origin: TsOrigin::Stored,
+        })
     }
     pub fn from_mtime(t: SystemTime) -> Self {
-        Self { value: Some(format_system_time(t)), origin: TsOrigin::FileMtime }
+        Self {
+            value: Some(format_system_time(t)),
+            origin: TsOrigin::FileMtime,
+        }
     }
-    pub fn is_present(&self) -> bool { self.value.is_some() }
+    pub fn is_present(&self) -> bool {
+        self.value.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -138,7 +157,12 @@ pub struct BlockDraft {
 
 impl BlockDraft {
     pub fn text(s: &str) -> Self {
-        Self { kind: BlockKind::Text, text: Some(s.to_string()), payload: Value::Null, tool_use_id: None }
+        Self {
+            kind: BlockKind::Text,
+            text: Some(s.to_string()),
+            payload: Value::Null,
+            tool_use_id: None,
+        }
     }
 }
 
@@ -224,14 +248,26 @@ mod tests {
     #[test]
     fn normalizes_offsets_to_utc_millis() {
         assert_eq!(
-            Timestamp::stored("2026-09-30T12:00:00.000+02:00").unwrap().value.as_deref(),
+            Timestamp::stored("2026-09-30T12:00:00.000+02:00")
+                .unwrap()
+                .value
+                .as_deref(),
             Some("2026-09-30T10:00:00.000Z")
         );
         assert_eq!(
-            Timestamp::stored("2026-09-30T10:00:00Z").unwrap().value.as_deref(),
+            Timestamp::stored("2026-09-30T10:00:00Z")
+                .unwrap()
+                .value
+                .as_deref(),
             Some("2026-09-30T10:00:00.000Z")
         );
-        assert_eq!(Timestamp::stored("2026-09-30T10:00:00.123456Z").unwrap().value.as_deref(), Some("2026-09-30T10:00:00.123Z"));
+        assert_eq!(
+            Timestamp::stored("2026-09-30T10:00:00.123456Z")
+                .unwrap()
+                .value
+                .as_deref(),
+            Some("2026-09-30T10:00:00.123Z")
+        );
     }
 
     #[test]
@@ -243,8 +279,16 @@ mod tests {
 
     #[test]
     fn epoch_millis_and_mtime() {
-        assert_eq!(Timestamp::stored_epoch_ms(1_790_000_000_000).unwrap().value.as_deref(), Some("2026-09-21T14:13:20.000Z"));
-        let t = Timestamp::from_mtime(SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1_790_000_000_500));
+        assert_eq!(
+            Timestamp::stored_epoch_ms(1_790_000_000_000)
+                .unwrap()
+                .value
+                .as_deref(),
+            Some("2026-09-21T14:13:20.000Z")
+        );
+        let t = Timestamp::from_mtime(
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1_790_000_000_500),
+        );
         assert_eq!(t.origin, TsOrigin::FileMtime);
         assert_eq!(t.value.as_deref(), Some("2026-09-21T14:13:20.500Z"));
         assert_eq!(Timestamp::absent().origin, TsOrigin::Absent);

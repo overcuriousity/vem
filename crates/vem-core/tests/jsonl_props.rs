@@ -4,7 +4,10 @@ use vem_core::jsonl::JsonlReader;
 
 fn line_strategy() -> impl Strategy<Value = Vec<u8>> {
     // Bytes that are not '\n' and not '\r', so each generated line is exactly one record.
-    prop::collection::vec(any::<u8>().prop_filter("no newline", |b| *b != b'\n' && *b != b'\r'), 0..40)
+    prop::collection::vec(
+        any::<u8>().prop_filter("no newline", |b| *b != b'\n' && *b != b'\r'),
+        0..40,
+    )
 }
 
 proptest! {

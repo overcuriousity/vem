@@ -1,0 +1,137 @@
+# Builds release binaries on every push to main.
+#
+# Publishing rule:
+#   - If tag v<workspace version> does not exist yet, the build becomes that
+#     release (marked latest). Bumping `version` in Cargo.toml is how a release is cut.
+#   - Otherwise the build replaces the rolling `nightly` prerelease.
+#
+# Asset names carry no version (vem-<target>.tar.gz / .zip) so that
+# releases/latest/download/<asset> and install.sh stay stable.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - install.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --locked -p vem --target ${{ matrix.target }}
+      - name: Smoke test
+        if: "!(matrix.target == 'x86_64-apple-darwin')"
+        shell: bash
+        run: target/${{ matrix.target }}/release/vem --version
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="vem-${{ matrix.target }}"
+          mkdir -p dist "$name"
+          cp README.md LICENSE "$name/"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/vem.exe" "$name/"
+            7z a "dist/$name.zip" "$name" >/dev/null
+            asset="$name.zip"
+          else
+            cp "target/${{ matrix.target }}/release/vem" "$name/"
+            tar -czf "dist/$name.tar.gz" "$name"
+            asset="$name.tar.gz"
+          fi
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum "$asset"; else shasum -a 256 "$asset"; fi > "$asset.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vem-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  installer:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: vem-x86_64-unknown-linux-musl
+          path: dist
+      - name: install.sh installs and verifies a local build
+        run: |
+          set -eu
+          VEM_DOWNLOAD_BASE="file://$PWD/dist" VEM_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/vem" --version
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [build, installer]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && cat *.sha256 > SHA256SUMS && cat SHA256SUMS
+      - name: Publish
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "vem") | .version')
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Version already released: refresh the rolling nightly build instead.
+            gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+            gh release create nightly dist/* \
+              --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "nightly ($(git rev-parse --short HEAD))" \
+              --notes "Rolling build of main at $GITHUB_SHA. Not a release; install a tagged version for casework."
+          else
+            gh release create "$tag" dist/* \
+              --target "$GITHUB_SHA" --latest \
+              --title "vem $tag" --generate-notes
+          fi

@@ -8,7 +8,9 @@ pub const SCHEMA_VERSION: i64 = 1;
 
 pub fn open(path: &Path) -> Result<Connection, CaseError> {
     let conn = Connection::open(path)?;
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;")?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;",
+    )?;
     migrate(&conn)?;
     Ok(conn)
 }
@@ -22,7 +24,10 @@ pub fn migrate(conn: &Connection) -> Result<(), CaseError> {
     // transactional in SQLite), so a crash cannot leave a half-created schema. Later versions add
     // `if version < N { BEGIN; <changes>; PRAGMA user_version = N; COMMIT; }` steps here, in order.
     if version < 1 {
-        conn.execute_batch(&format!("BEGIN;\n{}\nPRAGMA user_version = 1;\nCOMMIT;", include_str!("schema.sql")))?;
+        conn.execute_batch(&format!(
+            "BEGIN;\n{}\nPRAGMA user_version = 1;\nCOMMIT;",
+            include_str!("schema.sql")
+        ))?;
     }
     Ok(())
 }
