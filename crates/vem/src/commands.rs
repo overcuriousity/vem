@@ -4,7 +4,7 @@ use crate::ExportFormat;
 use serde::Serialize;
 use std::path::Path;
 use vem_case::evidence::{attach, AttachOptions};
-use vem_case::export::{events, Scope};
+use vem_case::export::Scope;
 use vem_case::query;
 use vem_case::{Case, CaseError};
 use vem_core::model::Harness;
@@ -152,7 +152,7 @@ struct Inventory {
     case: vem_case::CaseInfo,
     roots: Vec<RootInventory>,
     anomalies: Vec<query::AnomalyRow>,
-    audit_log: Vec<AuditRow>,
+    audit_log: Vec<query::AuditRow>,
 }
 
 #[derive(Serialize)]
@@ -161,32 +161,6 @@ struct RootInventory {
     stores: Vec<query::StoreRow>,
     absent: Vec<String>,
     files: Vec<query::SourceFileRow>,
-}
-
-#[derive(Serialize)]
-struct AuditRow {
-    id: i64,
-    ts: String,
-    action: String,
-    target: Option<String>,
-    details: serde_json::Value,
-}
-
-fn audit_rows(case: &Case) -> Result<Vec<AuditRow>, CaseError> {
-    let mut stmt = case
-        .conn
-        .prepare("SELECT id, ts, action, target, details FROM audit_log ORDER BY id")?;
-    let rows = stmt.query_map([], |r| {
-        let d: String = r.get(4)?;
-        Ok(AuditRow {
-            id: r.get(0)?,
-            ts: r.get(1)?,
-            action: r.get(2)?,
-            target: r.get(3)?,
-            details: serde_json::from_str(&d).unwrap_or(serde_json::Value::Null),
-        })
-    })?;
-    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 pub fn inventory(case_dir: &Path, json: bool) -> Result<(), CaseError> {
@@ -204,7 +178,7 @@ pub fn inventory(case_dir: &Path, json: bool) -> Result<(), CaseError> {
         case: case.info()?,
         roots,
         anomalies: query::anomalies(&case, &query::AnomalyFilter::default())?,
-        audit_log: audit_rows(&case)?,
+        audit_log: query::audit_log(&case)?,
     };
     emit(json, &inv, |inv| {
         let mut s = format!("case {:?} (vem {})\n", inv.case.name, inv.case.tool_version);
@@ -302,14 +276,6 @@ pub fn sessions(
     })
 }
 
-#[derive(Serialize)]
-struct ExportReport {
-    format: String,
-    output: String,
-    events: usize,
-    sha256: String,
-}
-
 pub fn export(
     case_dir: &Path,
     format: ExportFormat,
@@ -324,42 +290,12 @@ pub fn export(
         (Some(r), None) => Scope::Root(r),
         (None, None) => Scope::Case,
     };
-    vem_case::export::check_scope(&case, &scope)?;
-    vem_case::export::check_output_path(&case, output)?;
-    let ev = events(&case, &scope)?;
-    if ev.is_empty() {
-        return Err(CaseError::Export(
-            "nothing to export in this scope".to_string(),
-        ));
-    }
-    let format_name = match format {
-        ExportFormat::TimesketchJsonl => {
-            let f = std::fs::File::create(output)?;
-            vem_case::export::timesketch::write_jsonl(&ev, std::io::BufWriter::new(f))?;
-            "timesketch-jsonl"
-        }
-        ExportFormat::TimesketchCsv => {
-            let f = std::fs::File::create(output)?;
-            vem_case::export::timesketch::write_csv(&ev, std::io::BufWriter::new(f))?;
-            "timesketch-csv"
-        }
-        ExportFormat::VestigoParquet => {
-            vem_case::export::parquet::write_parquet(&ev, output)?;
-            "vestigo-parquet"
-        }
+    let format = match format {
+        ExportFormat::TimesketchJsonl => vem_case::export::Format::TimesketchJsonl,
+        ExportFormat::TimesketchCsv => vem_case::export::Format::TimesketchCsv,
+        ExportFormat::VestigoParquet => vem_case::export::Format::VestigoParquet,
     };
-    let (sha256, _) = vem_core::hash::sha256_file(output)?;
-    let report = ExportReport {
-        format: format_name.to_string(),
-        output: output.display().to_string(),
-        events: ev.len(),
-        sha256: sha256.clone(),
-    };
-    case.audit(
-        "export",
-        Some(&report.output),
-        serde_json::to_value(&report)?,
-    )?;
+    let report = vem_case::export::run(&case, format, &scope, output)?;
     emit(json, &report, |r| {
         format!(
             "exported {} events as {} to {}\n  sha256: {}",
