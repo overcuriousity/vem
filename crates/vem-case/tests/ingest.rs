@@ -65,8 +65,8 @@ fn ingests_fixture_into_canonical_rows() {
     );
     assert_eq!(report.tool_calls, 4);
     assert_eq!(
-        report.observations, 6,
-        "command, written, edited, spawned, file-history backup, paste"
+        report.observations, 7,
+        "command, written, edited, spawned, file-history backup, paste, pasted AWS key"
     );
     assert_eq!(
         report.anomalies, 4,

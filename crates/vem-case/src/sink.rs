@@ -149,6 +149,34 @@ impl<'a> DbSink<'a> {
         Ok(())
     }
 
+    /// One `secret_candidate` observation per rule match in `text` (spec §4). `from` is
+    /// (tool call id, block id, provenance id): exactly one is `Some`.
+    fn insert_secrets(
+        &mut self,
+        session_id: i64,
+        text: &str,
+        field: &str,
+        from: (Option<i64>, Option<i64>, Option<i64>),
+        ts: &Timestamp,
+        extra: Option<(&str, Value)>,
+    ) -> Result<(), CaseError> {
+        for m in crate::secrets::scan(text) {
+            let mut details = serde_json::json!({
+                "rule": m.rule, "rule_version": crate::secrets::RULESET_VERSION, "field": field,
+                "offset": m.offset, "length": m.length, "match": m.matched,
+            });
+            if let Some((k, v)) = &extra {
+                details[*k] = v.clone();
+            }
+            self.conn.execute(
+                "INSERT INTO observations (session_id, kind, derived_from_tool_call_id, derived_from_block_id, derived_from_provenance_id, timestamp, ts_origin, confidence, details) VALUES (?1, 'secret_candidate', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![session_id, from.0, from.1, from.2, ts.value, ts.origin.as_str(), m.confidence, details.to_string()],
+            )?;
+            self.counts.observations += 1;
+        }
+        Ok(())
+    }
+
     fn try_message(&mut self, session: SessionHandle, m: &MessageDraft) -> Result<i64, CaseError> {
         let prov_id = self.insert_provenance(&m.provenance)?;
         let ordinal = self.ordinal_for(session)?;
@@ -162,6 +190,17 @@ impl<'a> DbSink<'a> {
                 "INSERT INTO blocks (message_id, ordinal, kind, text, payload, tool_use_id, provenance_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![message_id, i as i64, b.kind.as_str(), b.text, b.payload.to_string(), b.tool_use_id, prov_id],
             )?;
+            let block_id = self.conn.last_insert_rowid();
+            if let Some(text) = &b.text {
+                self.insert_secrets(
+                    session.0,
+                    text,
+                    b.kind.as_str(),
+                    (None, Some(block_id), None),
+                    &m.timestamp,
+                    None,
+                )?;
+            }
         }
         self.counts.messages += 1;
         Ok(message_id)
@@ -186,6 +225,14 @@ impl<'a> DbSink<'a> {
             "UPDATE blocks SET tool_call_id = ?1 WHERE id = ?2 OR id = ?3",
             params![id, use_id, result_id],
         )?;
+        self.insert_secrets(
+            session.0,
+            &t.input.to_string(),
+            "tool_input",
+            (Some(id), None, None),
+            &t.started,
+            None,
+        )?;
         self.counts.tool_calls += 1;
         Ok(id)
     }
@@ -205,6 +252,54 @@ impl<'a> DbSink<'a> {
             params![session.0, o.kind.as_str(), tc, blk, prov, o.path, o.command, o.before_blob, o.after_blob, o.timestamp.value, o.timestamp.origin.as_str(), o.confidence.as_str(), o.details.to_string()],
         )?;
         self.counts.observations += 1;
+        if o.kind == ObservationKind::PasteDetected {
+            let inline: Vec<(Value, String)> = o
+                .details
+                .get("pastedContents")
+                .and_then(Value::as_object)
+                .map(|m| {
+                    m.iter()
+                        .filter_map(|(k, e)| {
+                            e.get("content").and_then(Value::as_str).map(|c| {
+                                (
+                                    e.get("id")
+                                        .cloned()
+                                        .unwrap_or_else(|| Value::String(k.clone())),
+                                    c.to_string(),
+                                )
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let cached: Vec<(Value, String)> = o
+                .details
+                .get("pastes")
+                .and_then(Value::as_array)
+                .map(|ps| {
+                    ps.iter()
+                        .filter_map(|p| {
+                            let sha = p.get("content_blob").and_then(Value::as_str)?;
+                            let bytes = std::fs::read(blobs::path(self.case_dir, sha)).ok()?;
+                            Some((
+                                p.get("id").cloned().unwrap_or(Value::Null),
+                                String::from_utf8_lossy(&bytes).to_string(),
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (paste_id, text) in inline.into_iter().chain(cached) {
+                self.insert_secrets(
+                    session.0,
+                    &text,
+                    "paste",
+                    (None, None, prov),
+                    &o.timestamp,
+                    Some(("paste_id", paste_id)),
+                )?;
+            }
+        }
         Ok(())
     }
 

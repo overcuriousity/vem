@@ -32,6 +32,8 @@ pub struct IngestReport {
     pub tool_version: String,
     /// `name/version` of every parser used in this run.
     pub parsers: BTreeSet<String>,
+    /// Version of the secret-candidate rule set applied at ingest (`secrets::RULESET_VERSION`).
+    pub secret_rules: String,
 }
 
 fn parse_ts_to_system_time(s: &str) -> Option<std::time::SystemTime> {
@@ -185,6 +187,7 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
     }
     let mut report = IngestReport {
         tool_version: TOOL_VERSION.to_string(),
+        secret_rules: crate::secrets::RULESET_VERSION.to_string(),
         ..Default::default()
     };
     let case_dir = case.dir.clone();

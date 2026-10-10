@@ -32,7 +32,7 @@ fn ingested() -> (tempfile::TempDir, Case) {
 fn one_event_per_message_tool_call_and_observation() {
     let (_t, case) = ingested();
     let ev = events(&case, &Scope::Case).unwrap();
-    assert_eq!(ev.len(), 23 + 4 + 6);
+    assert_eq!(ev.len(), 23 + 4 + 7);
     // A record without a timestamp is placed at its session's start, labelled inferred (I5).
     let first = ev
         .iter()
@@ -108,7 +108,7 @@ fn scopes_restrict_events() {
     let ev = events(&case, &Scope::Session(s0.id)).unwrap();
     assert_eq!(ev.len(), 2);
     let ev = events(&case, &Scope::Root(s0.root_id)).unwrap();
-    assert_eq!(ev.len(), 33);
+    assert_eq!(ev.len(), 34);
 }
 
 #[test]
