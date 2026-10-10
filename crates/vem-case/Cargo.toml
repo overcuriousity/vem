@@ -18,6 +18,8 @@ walkdir.workspace = true
 arrow.workspace = true
 parquet.workspace = true
 csv.workspace = true
+similar.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

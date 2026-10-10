@@ -1,27 +1,28 @@
 [package]
-name = "vem"
+name = "vem-web"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Vestigia Ex Machina: forensic analysis of agentic AI harness traces"
-
-[[bin]]
-name = "vem"
-path = "src/main.rs"
+description = "Loopback-only HTTP API and embedded conversation viewer for vem"
+build = "build.rs"
 
 [dependencies]
 vem-core = { path = "../vem-core" }
 vem-case = { path = "../vem-case" }
-vem-web = { path = "../vem-web" }
+axum.workspace = true
 tokio.workspace = true
-clap.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+rust-embed.workspace = true
+base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-assert_cmd.workspace = true
-predicates.workspace = true
+tower.workspace = true
+http-body-util.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
 walkdir.workspace = true
+base64.workspace = true
