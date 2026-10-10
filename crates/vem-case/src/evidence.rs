@@ -259,6 +259,18 @@ pub fn attach(
 ) -> Result<AttachReport, CaseError> {
     let root = path.canonicalize()?;
     check_root_vs_case(&root, &case.dir)?;
+    // Filesystem timestamps of every entry, taken before identification and discovery read any file, so a
+    // recorded atime is never vem's own read.
+    let snapshot: HashMap<PathBuf, std::fs::Metadata> = walkdir::WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            std::fs::symlink_metadata(e.path())
+                .ok()
+                .map(|m| (e.path().to_path_buf(), m))
+        })
+        .collect();
     let identification = identify(&root, opts.harness)?;
     let adapter = vem_adapters::adapter_for(identification.harness)
         .ok_or_else(|| CaseError::NoAdapter(identification.harness.to_string()))?;
@@ -322,6 +334,12 @@ pub fn attach(
             params![root_id, file_id, kind.as_str(), message, details.to_string()],
         )
     };
+    let unreadable_anomaly = |tx: &rusqlite::Transaction<'_>, rel: &str, error: String| {
+        tx.execute(
+            "INSERT INTO anomalies (root_id, kind, severity, message, details) VALUES (?1, ?2, 'error', ?3, ?4)",
+            params![root_id, AnomalyKind::UnreadableFile.as_str(), format!("{rel} could not be read during attach: {error}"), serde_json::json!({ "rel_path": rel, "error": error }).to_string()],
+        )
+    };
     for entry in walkdir::WalkDir::new(&root)
         .follow_links(false)
         .sort_by_file_name()
@@ -329,11 +347,12 @@ pub fn attach(
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                unreadable.push(
-                    e.path()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default(),
-                );
+                let rel = e
+                    .path()
+                    .map(|p| rel_string(p.strip_prefix(&root).unwrap_or(p)))
+                    .unwrap_or_default();
+                unreadable_anomaly(&tx, &rel, e.to_string())?;
+                unreadable.push(rel);
                 continue;
             }
         };
@@ -343,8 +362,10 @@ pub fn attach(
         }
         let (rel, encoded) =
             encode_rel_path(entry.path().strip_prefix(&root).unwrap_or(entry.path()));
-        // Timestamps are taken before the file is read, so atime is not vem's own read.
-        let meta = std::fs::symlink_metadata(entry.path()).ok();
+        let meta = snapshot
+            .get(entry.path())
+            .cloned()
+            .or_else(|| std::fs::symlink_metadata(entry.path()).ok());
         let mtime = meta.as_ref().and_then(|m| ts(m.modified()));
         let ctime = meta.as_ref().and_then(change_time);
         let btime = meta.as_ref().and_then(|m| ts(m.created()));
@@ -352,6 +373,11 @@ pub fn attach(
         let store_id = file_to_store.get(&(rel.clone(), encoded)).copied();
         let file_id = if ft.is_symlink() {
             let Ok(target) = std::fs::read_link(entry.path()) else {
+                unreadable_anomaly(
+                    &tx,
+                    &rel,
+                    "the symbolic link target could not be read".into(),
+                )?;
                 unreadable.push(rel);
                 continue;
             };
@@ -371,20 +397,24 @@ pub fn attach(
             symlinks.push(rel.clone());
             id
         } else {
-            if std::fs::File::open(entry.path()).is_err() {
+            if let Err(e) = std::fs::File::open(entry.path()) {
+                unreadable_anomaly(&tx, &rel, e.to_string())?;
                 unreadable.push(rel);
                 continue;
             }
-            let (sha, size, retained) = if opts.retain {
-                let (sha, size) = blobs::put_file(&tx, &case_dir, entry.path())?;
-                (sha, size, 1)
+            let hashed = if opts.retain {
+                blobs::put_file(&tx, &case_dir, entry.path()).map(|(sha, size)| (sha, size, 1))
             } else {
-                match sha256_file(entry.path()) {
-                    Ok((sha, size)) => (sha, size, 0),
-                    Err(_) => {
-                        unreadable.push(rel);
-                        continue;
-                    }
+                sha256_file(entry.path())
+                    .map(|(sha, size)| (sha, size, 0))
+                    .map_err(CaseError::from)
+            };
+            let (sha, size, retained) = match hashed {
+                Ok(x) => x,
+                Err(e) => {
+                    unreadable_anomaly(&tx, &rel, e.to_string())?;
+                    unreadable.push(rel);
+                    continue;
                 }
             };
             if store_id.is_none() {
