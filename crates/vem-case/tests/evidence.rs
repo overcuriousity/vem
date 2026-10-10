@@ -158,7 +158,8 @@ fn unrecognized_dir_fails_with_child_hint_and_forced_harness_works() {
     assert_eq!(report.file_count, 0);
 }
 
-#[cfg(unix)]
+// APFS and HFS+ refuse non-UTF-8 names (EILSEQ), so the fixture cannot be built on macOS.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn non_utf8_names_are_stored_losslessly() {
     use std::ffi::OsStr;

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use vem_core::adapter::Identification;
 use vem_core::hash::{sha256_file, sha256_hex};
-use vem_core::model::{format_system_time, AnomalyKind, Harness, TS_FORMAT};
+use vem_core::model::{format_system_time, AnomalyKind, Harness};
 
 #[derive(Debug, Clone)]
 pub struct AttachOptions {
@@ -161,7 +161,7 @@ fn change_time(m: &std::fs::Metadata) -> Option<String> {
     {
         use std::os::unix::fs::MetadataExt;
         chrono::DateTime::from_timestamp(m.ctime(), m.ctime_nsec() as u32)
-            .map(|d| d.format(TS_FORMAT).to_string())
+            .map(|d| d.format(vem_core::model::TS_FORMAT).to_string())
     }
     #[cfg(not(unix))]
     {
