@@ -4,12 +4,15 @@ use super::Event;
 use crate::case::now;
 use crate::error::CaseError;
 use crate::TOOL_VERSION;
-use arrow::array::{ArrayRef, ListBuilder, MapBuilder, MapFieldNames, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
+use arrow::array::{
+    ArrayRef, ListBuilder, MapBuilder, MapFieldNames, StringBuilder, TimestampMillisecondBuilder,
+    UInt64Builder,
+};
 use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use parquet::arrow::ArrowWriter;
-use parquet::file::properties::WriterProperties;
 use parquet::file::metadata::KeyValue;
+use parquet::file::properties::WriterProperties;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -22,13 +25,20 @@ pub struct ParquetReport {
 }
 
 fn map_names() -> MapFieldNames {
-    MapFieldNames { entry: "entries".to_string(), key: "key".to_string(), value: "value".to_string() }
+    MapFieldNames {
+        entry: "entries".to_string(),
+        key: "key".to_string(),
+        value: "value".to_string(),
+    }
 }
 
 pub fn schema() -> Schema {
     let entries = Field::new(
         "entries",
-        DataType::Struct(Fields::from(vec![Field::new("key", DataType::Utf8, false), Field::new("value", DataType::Utf8, true)])),
+        DataType::Struct(Fields::from(vec![
+            Field::new("key", DataType::Utf8, false),
+            Field::new("value", DataType::Utf8, true),
+        ])),
         false,
     );
     Schema::new(vec![
@@ -37,18 +47,28 @@ pub fn schema() -> Schema {
         Field::new("byte_offset", DataType::UInt64, false),
         Field::new("content_hash", DataType::Utf8, false),
         Field::new("message", DataType::Utf8, false),
-        Field::new("timestamp", DataType::Timestamp(TimeUnit::Millisecond, Some("UTC".into())), true),
+        Field::new(
+            "timestamp",
+            DataType::Timestamp(TimeUnit::Millisecond, Some("UTC".into())),
+            true,
+        ),
         Field::new("timestamp_desc", DataType::Utf8, false),
         Field::new("artifact", DataType::Utf8, false),
         Field::new("artifact_long", DataType::Utf8, false),
         Field::new("display_name", DataType::Utf8, false),
-        Field::new("tags", DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))), false),
+        Field::new(
+            "tags",
+            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            false,
+        ),
         Field::new("attributes", DataType::Map(Arc::new(entries), false), false),
     ])
 }
 
 fn millis(ts: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(ts).ok().map(|d| d.timestamp_millis())
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .ok()
+        .map(|d| d.timestamp_millis())
 }
 
 fn arrow_err(e: arrow::error::ArrowError) -> CaseError {
@@ -71,7 +91,11 @@ pub fn write_parquet(events: &[Event], out: &Path) -> Result<ParquetReport, Case
     let mut artifact_long = StringBuilder::new();
     let mut display_name = StringBuilder::new();
     let mut tags = ListBuilder::new(StringBuilder::new());
-    let mut attributes = MapBuilder::new(Some(map_names()), StringBuilder::new(), StringBuilder::new());
+    let mut attributes = MapBuilder::new(
+        Some(map_names()),
+        StringBuilder::new(),
+        StringBuilder::new(),
+    );
     // Keyed by (sha256, path): identical files at two paths are two original files.
     let mut originals: BTreeMap<(String, String), serde_json::Value> = BTreeMap::new();
 
@@ -131,13 +155,22 @@ pub fn write_parquet(events: &[Event], out: &Path) -> Result<ParquetReport, Case
     // Vestigo reads `schema_arrow.metadata`, which pyarrow rebuilds from the serialized Arrow schema
     // (`ARROW:schema`), so the keys must live on the Arrow schema. They are also kept as plain
     // Parquet footer key/value entries for readers that look there.
-    let schema = Arc::new(schema().with_metadata(footer.iter().cloned().collect::<HashMap<_, _>>()));
+    let schema =
+        Arc::new(schema().with_metadata(footer.iter().cloned().collect::<HashMap<_, _>>()));
     let batch = RecordBatch::try_new(schema.clone(), columns).map_err(arrow_err)?;
-    let metadata: Vec<KeyValue> = footer.into_iter().map(|(k, v)| KeyValue::new(k, v)).collect();
-    let props = WriterProperties::builder().set_key_value_metadata(Some(metadata)).build();
+    let metadata: Vec<KeyValue> = footer
+        .into_iter()
+        .map(|(k, v)| KeyValue::new(k, v))
+        .collect();
+    let props = WriterProperties::builder()
+        .set_key_value_metadata(Some(metadata))
+        .build();
     let file = std::fs::File::create(out)?;
     let mut writer = ArrowWriter::try_new(file, schema, Some(props)).map_err(parquet_err)?;
     writer.write(&batch).map_err(parquet_err)?;
     writer.close().map_err(parquet_err)?;
-    Ok(ParquetReport { rows: events.len(), original_files: original_files.len() })
+    Ok(ParquetReport {
+        rows: events.len(),
+        original_files: original_files.len(),
+    })
 }

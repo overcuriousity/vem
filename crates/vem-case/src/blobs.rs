@@ -11,11 +11,17 @@ pub fn path(case_dir: &Path, sha256: &str) -> PathBuf {
 }
 
 fn record(conn: &Connection, sha256: &str, size: u64) -> Result<(), CaseError> {
-    conn.execute("INSERT OR IGNORE INTO blobs (sha256, size) VALUES (?1, ?2)", params![sha256, size as i64])?;
+    conn.execute(
+        "INSERT OR IGNORE INTO blobs (sha256, size) VALUES (?1, ?2)",
+        params![sha256, size as i64],
+    )?;
     Ok(())
 }
 
-fn write_atomically(target: &Path, write: impl FnOnce(&Path) -> std::io::Result<()>) -> std::io::Result<()> {
+fn write_atomically(
+    target: &Path,
+    write: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     if target.exists() {
         return Ok(());
     }
@@ -25,7 +31,11 @@ fn write_atomically(target: &Path, write: impl FnOnce(&Path) -> std::io::Result<
         Ok(()) => Ok(()),
         Err(e) => {
             let _ = std::fs::remove_file(&tmp);
-            if target.exists() { Ok(()) } else { Err(e) }
+            if target.exists() {
+                Ok(())
+            } else {
+                Err(e)
+            }
         }
     }
 }
@@ -39,7 +49,11 @@ pub fn put_bytes(conn: &Connection, case_dir: &Path, bytes: &[u8]) -> Result<Str
 
 /// Copies `src` into the store, hashing the bytes as they are copied, so the blob's name is the hash of
 /// exactly the bytes stored (no window between hashing and copying). Returns `(sha256, size)`.
-pub fn put_file(conn: &Connection, case_dir: &Path, src: &Path) -> Result<(String, u64), CaseError> {
+pub fn put_file(
+    conn: &Connection,
+    case_dir: &Path,
+    src: &Path,
+) -> Result<(String, u64), CaseError> {
     let blobs = case_dir.join("blobs");
     let tmp = blobs.join(format!("incoming.tmp.{}", std::process::id()));
     let copied = copy_and_hash(src, &tmp);

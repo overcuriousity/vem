@@ -2,9 +2,9 @@
 
 use crate::blobs;
 use crate::error::CaseError;
+use crate::evidence::encode_rel_path;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
-use crate::evidence::encode_rel_path;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use vem_core::model::*;
@@ -35,8 +35,24 @@ pub struct DbSink<'a> {
 }
 
 impl<'a> DbSink<'a> {
-    pub fn new(conn: &'a Connection, case_dir: &'a Path, root_id: i64, store_id: i64, source_file_id: i64) -> Self {
-        Self { conn, case_dir, root_id, store_id, source_file_id, next_ordinal: HashMap::new(), counts: SinkCounts::default(), parsers: BTreeSet::new(), error: None }
+    pub fn new(
+        conn: &'a Connection,
+        case_dir: &'a Path,
+        root_id: i64,
+        store_id: i64,
+        source_file_id: i64,
+    ) -> Self {
+        Self {
+            conn,
+            case_dir,
+            root_id,
+            store_id,
+            source_file_id,
+            next_ordinal: HashMap::new(),
+            counts: SinkCounts::default(),
+            parsers: BTreeSet::new(),
+            error: None,
+        }
     }
 
     fn fail<T: Default>(&mut self, r: Result<T, CaseError>) -> T {
@@ -52,7 +68,8 @@ impl<'a> DbSink<'a> {
     }
 
     fn insert_provenance(&mut self, p: &Provenance) -> Result<i64, CaseError> {
-        self.parsers.insert(format!("{}/{}", p.parser_name, p.parser_version));
+        self.parsers
+            .insert(format!("{}/{}", p.parser_name, p.parser_version));
         self.conn.execute(
             "INSERT INTO provenance (source_file_id, byte_offset, byte_length, record_index, content_sha256, parser_name, parser_version, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![p.source_file.0, p.byte_offset as i64, p.byte_length as i64, p.record_index as i64, p.content_sha256, p.parser_name, p.parser_version, p.origin.as_str()],
@@ -63,7 +80,11 @@ impl<'a> DbSink<'a> {
     fn block_id(&self, r: &BlockRef) -> Result<Option<i64>, CaseError> {
         Ok(self
             .conn
-            .query_row("SELECT id FROM blocks WHERE message_id = ?1 AND ordinal = ?2", params![r.message.0, r.ordinal as i64], |row| row.get(0))
+            .query_row(
+                "SELECT id FROM blocks WHERE message_id = ?1 AND ordinal = ?2",
+                params![r.message.0, r.ordinal as i64],
+                |row| row.get(0),
+            )
             .optional()?)
     }
 
@@ -73,14 +94,24 @@ impl<'a> DbSink<'a> {
             *n += 1;
             return Ok(v);
         }
-        let start: i64 = self.conn.query_row("SELECT COALESCE(MAX(ordinal), -1) + 1 FROM messages WHERE session_id = ?1", [session.0], |r| r.get(0))?;
+        let start: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM messages WHERE session_id = ?1",
+            [session.0],
+            |r| r.get(0),
+        )?;
         self.next_ordinal.insert(session.0, start + 1);
         Ok(start)
     }
 
     fn try_session(&mut self, d: &SessionDraft) -> Result<i64, CaseError> {
         let (first, first_o, last, last_o, fixed) = match (&d.first_ts, &d.last_ts) {
-            (Some(f), Some(l)) => (f.value.clone(), f.origin.as_str(), l.value.clone(), l.origin.as_str(), 1),
+            (Some(f), Some(l)) => (
+                f.value.clone(),
+                f.origin.as_str(),
+                l.value.clone(),
+                l.origin.as_str(),
+                1,
+            ),
             _ => (None, "absent", None, "absent", 0),
         };
         self.conn.execute(
@@ -97,11 +128,18 @@ impl<'a> DbSink<'a> {
             params![session.0, u.title, u.project_path, u.git_branch, u.harness_version],
         )?;
         if let Some(model) = &u.model {
-            let raw: String = self.conn.query_row("SELECT models FROM sessions WHERE id = ?1", [session.0], |r| r.get(0))?;
+            let raw: String = self.conn.query_row(
+                "SELECT models FROM sessions WHERE id = ?1",
+                [session.0],
+                |r| r.get(0),
+            )?;
             let mut models: Vec<String> = serde_json::from_str(&raw).unwrap_or_default();
             if !models.contains(model) {
                 models.push(model.clone());
-                self.conn.execute("UPDATE sessions SET models = ?2 WHERE id = ?1", params![session.0, serde_json::to_string(&models)?])?;
+                self.conn.execute(
+                    "UPDATE sessions SET models = ?2 WHERE id = ?1",
+                    params![session.0, serde_json::to_string(&models)?],
+                )?;
             }
         }
         Ok(())
@@ -125,7 +163,11 @@ impl<'a> DbSink<'a> {
         Ok(message_id)
     }
 
-    fn try_tool_call(&mut self, session: SessionHandle, t: &ToolCallDraft) -> Result<i64, CaseError> {
+    fn try_tool_call(
+        &mut self,
+        session: SessionHandle,
+        t: &ToolCallDraft,
+    ) -> Result<i64, CaseError> {
         let use_id = self.block_id(&t.tool_use)?.unwrap_or(0);
         let result_id = match &t.tool_result {
             Some(r) => self.block_id(r)?,
@@ -136,12 +178,19 @@ impl<'a> DbSink<'a> {
             params![session.0, use_id, result_id, t.name, t.category.as_str(), t.input.to_string(), t.result_text, t.result_payload.as_ref().map(|v| v.to_string()), t.is_error as i64, t.started.value, t.ended.value, t.started.origin.as_str()],
         )?;
         let id = self.conn.last_insert_rowid();
-        self.conn.execute("UPDATE blocks SET tool_call_id = ?1 WHERE id = ?2 OR id = ?3", params![id, use_id, result_id])?;
+        self.conn.execute(
+            "UPDATE blocks SET tool_call_id = ?1 WHERE id = ?2 OR id = ?3",
+            params![id, use_id, result_id],
+        )?;
         self.counts.tool_calls += 1;
         Ok(id)
     }
 
-    fn try_observation(&mut self, session: SessionHandle, o: &ObservationDraft) -> Result<(), CaseError> {
+    fn try_observation(
+        &mut self,
+        session: SessionHandle,
+        o: &ObservationDraft,
+    ) -> Result<(), CaseError> {
         let (tc, blk, prov) = match &o.derived_from {
             Derivation::ToolCall(h) => (Some(h.0), None, None),
             Derivation::Block(r) => (None, self.block_id(r)?, None),
@@ -155,7 +204,11 @@ impl<'a> DbSink<'a> {
         Ok(())
     }
 
-    fn try_claim(&mut self, session: SessionHandle, c: &IdentityClaimDraft) -> Result<(), CaseError> {
+    fn try_claim(
+        &mut self,
+        session: SessionHandle,
+        c: &IdentityClaimDraft,
+    ) -> Result<(), CaseError> {
         self.conn.execute(
             "INSERT INTO identity_claims (session_id, scheme, claimed_id, source_file_id, join_status) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![session.0, c.scheme, c.claimed_id, c.source_file.0, c.join_status.as_str()],
@@ -224,7 +277,11 @@ impl<'a> ParseSink for DbSink<'a> {
                  ORDER BY id",
             )
             .ok()?;
-        let rows = stmt.query_map(params![self.root_id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).ok()?;
+        let rows = stmt
+            .query_map(params![self.root_id], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })
+            .ok()?;
         // Filter in Rust: the session id comes from evidence and may hold LIKE/GLOB metacharacters.
         let found = rows
             .filter_map(Result::ok)

@@ -36,7 +36,13 @@ impl<R: BufRead> JsonlReader<R> {
     }
 
     pub fn with_max_len(inner: R, max_len: usize) -> Self {
-        Self { inner, offset: 0, index: 0, max_len, done: false }
+        Self {
+            inner,
+            offset: 0,
+            index: 0,
+            max_len,
+            done: false,
+        }
     }
 
     /// Reads one physical line. Returns `Ok(None)` at EOF.
@@ -86,7 +92,14 @@ impl<R: BufRead> JsonlReader<R> {
                 bytes.pop();
             }
         }
-        Ok(Some(RawRecord { index, offset: start, length, bytes, terminated, oversized }))
+        Ok(Some(RawRecord {
+            index,
+            offset: start,
+            length,
+            bytes,
+            terminated,
+            oversized,
+        }))
     }
 }
 

@@ -37,8 +37,15 @@ impl Case {
             "INSERT INTO case_info (id, name, examiner, created_at, tool_version) VALUES (1, ?1, ?2, ?3, ?4)",
             params![name, examiner, now(), TOOL_VERSION],
         )?;
-        let case = Case { dir: dir.to_path_buf(), conn };
-        case.audit("case.create", Some(name), serde_json::json!({ "examiner": examiner, "tool_version": TOOL_VERSION }))?;
+        let case = Case {
+            dir: dir.to_path_buf(),
+            conn,
+        };
+        case.audit(
+            "case.create",
+            Some(name),
+            serde_json::json!({ "examiner": examiner, "tool_version": TOOL_VERSION }),
+        )?;
         Ok(case)
     }
 
@@ -48,18 +55,33 @@ impl Case {
             return Err(CaseError::NotACase(dir.to_path_buf()));
         }
         let conn = db::open(&db_path)?;
-        Ok(Case { dir: dir.to_path_buf(), conn })
+        Ok(Case {
+            dir: dir.to_path_buf(),
+            conn,
+        })
     }
 
     pub fn info(&self) -> Result<CaseInfo, CaseError> {
         Ok(self.conn.query_row(
             "SELECT name, examiner, created_at, tool_version FROM case_info WHERE id = 1",
             [],
-            |r| Ok(CaseInfo { name: r.get(0)?, examiner: r.get(1)?, created_at: r.get(2)?, tool_version: r.get(3)? }),
+            |r| {
+                Ok(CaseInfo {
+                    name: r.get(0)?,
+                    examiner: r.get(1)?,
+                    created_at: r.get(2)?,
+                    tool_version: r.get(3)?,
+                })
+            },
         )?)
     }
 
-    pub fn audit(&self, action: &str, target: Option<&str>, details: Value) -> Result<(), CaseError> {
+    pub fn audit(
+        &self,
+        action: &str,
+        target: Option<&str>,
+        details: Value,
+    ) -> Result<(), CaseError> {
         self.conn.execute(
             "INSERT INTO audit_log (ts, action, target, details) VALUES (?1, ?2, ?3, ?4)",
             params![now(), action, target, details.to_string()],
@@ -78,7 +100,11 @@ impl Case {
     pub fn has_blob(&self, sha256: &str) -> Result<bool, CaseError> {
         Ok(self
             .conn
-            .query_row("SELECT 1 FROM blobs WHERE sha256 = ?1", params![sha256], |_| Ok(()))
+            .query_row(
+                "SELECT 1 FROM blobs WHERE sha256 = ?1",
+                params![sha256],
+                |_| Ok(()),
+            )
             .optional()?
             .is_some())
     }

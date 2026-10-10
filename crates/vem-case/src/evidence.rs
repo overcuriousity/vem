@@ -56,17 +56,35 @@ pub fn rel_string(p: &Path) -> String {
 /// percent-encoded as `%XX` (`true`); `decode_rel_path` reverses it.
 pub fn encode_rel_path(p: &Path) -> (String, bool) {
     let parts: Vec<&std::ffi::OsStr> = p.components().map(|c| c.as_os_str()).collect();
-    if let Some(utf8) = parts.iter().map(|c| c.to_str()).collect::<Option<Vec<&str>>>() {
+    if let Some(utf8) = parts
+        .iter()
+        .map(|c| c.to_str())
+        .collect::<Option<Vec<&str>>>()
+    {
         return (utf8.join("/"), false);
     }
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
-        (parts.iter().map(|c| percent_encode_invalid(c.as_bytes())).collect::<Vec<_>>().join("/"), true)
+        (
+            parts
+                .iter()
+                .map(|c| percent_encode_invalid(c.as_bytes()))
+                .collect::<Vec<_>>()
+                .join("/"),
+            true,
+        )
     }
     #[cfg(not(unix))]
     {
-        (parts.iter().map(|c| c.to_string_lossy().to_string()).collect::<Vec<_>>().join("/"), false)
+        (
+            parts
+                .iter()
+                .map(|c| c.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join("/"),
+            false,
+        )
     }
 }
 
@@ -142,7 +160,8 @@ fn change_time(m: &std::fs::Metadata) -> Option<String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        chrono::DateTime::from_timestamp(m.ctime(), m.ctime_nsec() as u32).map(|d| d.format(TS_FORMAT).to_string())
+        chrono::DateTime::from_timestamp(m.ctime(), m.ctime_nsec() as u32)
+            .map(|d| d.format(TS_FORMAT).to_string())
     }
     #[cfg(not(unix))]
     {
@@ -156,7 +175,10 @@ fn change_time(m: &std::fs::Metadata) -> Option<String> {
 pub fn check_root_vs_case(root: &Path, case_dir: &Path) -> Result<(), CaseError> {
     let case = case_dir.canonicalize()?;
     if case.starts_with(root) || root.starts_with(&case) {
-        return Err(CaseError::EvidenceOverlapsCase { root: root.to_path_buf(), case });
+        return Err(CaseError::EvidenceOverlapsCase {
+            root: root.to_path_buf(),
+            case,
+        });
     }
     Ok(())
 }
@@ -164,8 +186,14 @@ pub fn check_root_vs_case(root: &Path, case_dir: &Path) -> Result<(), CaseError>
 /// Immediate child directories of `path` that identify as a harness directory (one level only).
 pub fn child_candidates(path: &Path) -> Vec<(PathBuf, Vec<Identification>)> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(path) else { return out };
-    let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let Ok(rd) = std::fs::read_dir(path) else {
+        return out;
+    };
+    let mut dirs: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
     dirs.sort();
     for d in dirs {
         let ids = vem_adapters::identify_root(&d);
@@ -182,7 +210,10 @@ fn identify(root: &Path, forced: Option<Harness>) -> Result<Identification, Case
         (Some(h), _) => Ok(ids
             .into_iter()
             .find(|i| i.harness == h)
-            .unwrap_or(Identification { harness: h, evidence: vec!["forced by --harness; no content signature matched".to_string()] })),
+            .unwrap_or(Identification {
+                harness: h,
+                evidence: vec!["forced by --harness; no content signature matched".to_string()],
+            })),
         (None, 1) => Ok(ids.into_iter().next().expect("one")),
         (None, 0) => {
             let children = child_candidates(root);
@@ -191,17 +222,41 @@ fn identify(root: &Path, forced: Option<Harness>) -> Result<Identification, Case
             } else {
                 let names: Vec<String> = children
                     .iter()
-                    .map(|(p, ids)| format!("{} ({})", p.display(), ids.iter().map(|i| i.harness.as_str()).collect::<Vec<_>>().join(", ")))
+                    .map(|(p, ids)| {
+                        format!(
+                            "{} ({})",
+                            p.display(),
+                            ids.iter()
+                                .map(|i| i.harness.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    })
                     .collect();
-                format!("; it contains harness directories you can attach individually: {}", names.join("; "))
+                format!(
+                    "; it contains harness directories you can attach individually: {}",
+                    names.join("; ")
+                )
             };
-            Err(CaseError::Unrecognized { path: root.to_path_buf(), hint })
+            Err(CaseError::Unrecognized {
+                path: root.to_path_buf(),
+                hint,
+            })
         }
-        (None, _) => Err(CaseError::Ambiguous(ids.iter().map(|i| i.harness.as_str()).collect::<Vec<_>>().join(", "))),
+        (None, _) => Err(CaseError::Ambiguous(
+            ids.iter()
+                .map(|i| i.harness.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )),
     }
 }
 
-pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<AttachReport, CaseError> {
+pub fn attach(
+    case: &mut Case,
+    path: &Path,
+    opts: AttachOptions,
+) -> Result<AttachReport, CaseError> {
     let root = path.canonicalize()?;
     check_root_vs_case(&root, &case.dir)?;
     let identification = identify(&root, opts.harness)?;
@@ -237,10 +292,19 @@ pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<Attac
         for f in &s.files {
             file_to_store.insert(encode_rel_path(f), store_id);
         }
-        stores.push(StoreSummary { id: store_id, kind: s.kind.clone(), generation: s.generation.clone(), rel_path: rel_string(&s.rel_path), file_count: s.files.len() });
+        stores.push(StoreSummary {
+            id: store_id,
+            kind: s.kind.clone(),
+            generation: s.generation.clone(),
+            rel_path: rel_string(&s.rel_path),
+            file_count: s.files.len(),
+        });
     }
     for kind in &discovery.absent {
-        tx.execute("INSERT INTO absent_stores (root_id, kind) VALUES (?1, ?2)", params![root_id, kind])?;
+        tx.execute(
+            "INSERT INTO absent_stores (root_id, kind) VALUES (?1, ?2)",
+            params![root_id, kind],
+        )?;
     }
 
     let mut file_count = 0usize;
@@ -248,17 +312,28 @@ pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<Attac
     let mut total_bytes = 0u64;
     let mut unreadable = Vec::new();
     let mut symlinks = Vec::new();
-    let anomaly = |tx: &rusqlite::Transaction<'_>, file_id: i64, kind: AnomalyKind, message: String, details: serde_json::Value| {
+    let anomaly = |tx: &rusqlite::Transaction<'_>,
+                   file_id: i64,
+                   kind: AnomalyKind,
+                   message: String,
+                   details: serde_json::Value| {
         tx.execute(
             "INSERT INTO anomalies (root_id, source_file_id, kind, severity, message, details) VALUES (?1, ?2, ?3, 'info', ?4, ?5)",
             params![root_id, file_id, kind.as_str(), message, details.to_string()],
         )
     };
-    for entry in walkdir::WalkDir::new(&root).follow_links(false).sort_by_file_name() {
+    for entry in walkdir::WalkDir::new(&root)
+        .follow_links(false)
+        .sort_by_file_name()
+    {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                unreadable.push(e.path().map(|p| p.display().to_string()).unwrap_or_default());
+                unreadable.push(
+                    e.path()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                );
                 continue;
             }
         };
@@ -266,7 +341,8 @@ pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<Attac
         if !ft.is_file() && !ft.is_symlink() {
             continue;
         }
-        let (rel, encoded) = encode_rel_path(entry.path().strip_prefix(&root).unwrap_or(entry.path()));
+        let (rel, encoded) =
+            encode_rel_path(entry.path().strip_prefix(&root).unwrap_or(entry.path()));
         // Timestamps are taken before the file is read, so atime is not vem's own read.
         let meta = std::fs::symlink_metadata(entry.path()).ok();
         let mtime = meta.as_ref().and_then(|m| ts(m.modified()));
@@ -285,7 +361,13 @@ pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<Attac
                 params![root_id, store_id, rel, encoded, target_text, sha256_hex(target.as_os_str().as_encoded_bytes()), mtime, ctime, btime, atime],
             )?;
             let id = tx.last_insert_rowid();
-            anomaly(&tx, id, AnomalyKind::SymlinkInEvidence, format!("{rel} is a symbolic link to {target_text}; recorded, not followed"), serde_json::json!({ "target": target_text }))?;
+            anomaly(
+                &tx,
+                id,
+                AnomalyKind::SymlinkInEvidence,
+                format!("{rel} is a symbolic link to {target_text}; recorded, not followed"),
+                serde_json::json!({ "target": target_text }),
+            )?;
             symlinks.push(rel.clone());
             id
         } else {
@@ -317,7 +399,13 @@ pub fn attach(case: &mut Case, path: &Path, opts: AttachOptions) -> Result<Attac
             tx.last_insert_rowid()
         };
         if encoded {
-            anomaly(&tx, file_id, AnomalyKind::NonUtf8Path, format!("the name {rel} is not valid UTF-8; stored percent-encoded"), serde_json::json!({ "rel_path": rel }))?;
+            anomaly(
+                &tx,
+                file_id,
+                AnomalyKind::NonUtf8Path,
+                format!("the name {rel} is not valid UTF-8; stored percent-encoded"),
+                serde_json::json!({ "rel_path": rel }),
+            )?;
         }
     }
     tx.commit()?;

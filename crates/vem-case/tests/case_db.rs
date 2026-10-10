@@ -14,7 +14,10 @@ fn create_then_open_round_trips_case_info() {
     assert_eq!(info.name, "Incident 42");
     assert_eq!(info.examiner.as_deref(), Some("examiner a"));
     assert_eq!(info.tool_version, vem_case::TOOL_VERSION);
-    let v: i64 = case.conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    let v: i64 = case
+        .conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(v, vem_case::db::SCHEMA_VERSION);
 }
 
@@ -22,21 +25,37 @@ fn create_then_open_round_trips_case_info() {
 fn refuses_non_empty_dir_and_non_case_dir() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("something.txt"), "x").unwrap();
-    assert!(matches!(Case::create(tmp.path(), "n", None), Err(CaseError::AlreadyExists(_))));
+    assert!(matches!(
+        Case::create(tmp.path(), "n", None),
+        Err(CaseError::AlreadyExists(_))
+    ));
     let empty = tempfile::tempdir().unwrap();
-    assert!(matches!(Case::open(empty.path()), Err(CaseError::NotACase(_))));
+    assert!(matches!(
+        Case::open(empty.path()),
+        Err(CaseError::NotACase(_))
+    ));
 }
 
 #[test]
 fn audit_log_is_append_only() {
     let tmp = tempfile::tempdir().unwrap();
     let case = Case::create(&tmp.path().join("c"), "n", None).unwrap();
-    case.audit("test.action", Some("t"), serde_json::json!({"k": 1})).unwrap();
-    let n: i64 = case.conn.query_row("SELECT COUNT(*) FROM audit_log", [], |r| r.get(0)).unwrap();
+    case.audit("test.action", Some("t"), serde_json::json!({"k": 1}))
+        .unwrap();
+    let n: i64 = case
+        .conn
+        .query_row("SELECT COUNT(*) FROM audit_log", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(n, 2, "case.create plus test.action");
-    assert!(case.conn.execute("UPDATE audit_log SET action = 'x'", []).is_err());
+    assert!(case
+        .conn
+        .execute("UPDATE audit_log SET action = 'x'", [])
+        .is_err());
     assert!(case.conn.execute("DELETE FROM audit_log", []).is_err());
-    let still: i64 = case.conn.query_row("SELECT COUNT(*) FROM audit_log", [], |r| r.get(0)).unwrap();
+    let still: i64 = case
+        .conn
+        .query_row("SELECT COUNT(*) FROM audit_log", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(still, 2);
 }
 
@@ -49,6 +68,9 @@ fn blobs_are_content_addressed_and_deduplicated() {
     assert_eq!(a, b);
     assert_eq!(a, vem_core::hash::sha256_hex(b"hello"));
     assert_eq!(std::fs::read(case.blob_path(&a)).unwrap(), b"hello");
-    let n: i64 = case.conn.query_row("SELECT COUNT(*) FROM blobs", [], |r| r.get(0)).unwrap();
+    let n: i64 = case
+        .conn
+        .query_row("SELECT COUNT(*) FROM blobs", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(n, 1);
 }

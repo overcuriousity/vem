@@ -19,16 +19,29 @@ pub struct VecSink {
 
 impl VecSink {
     pub fn messages_with_role(&self, role: Role) -> Vec<&MessageDraft> {
-        self.messages.iter().filter(|(_, _, m)| m.role == role).map(|(_, _, m)| m).collect()
+        self.messages
+            .iter()
+            .filter(|(_, _, m)| m.role == role)
+            .map(|(_, _, m)| m)
+            .collect()
     }
     pub fn anomalies_of(&self, kind: AnomalyKind) -> Vec<&AnomalyDraft> {
         self.anomalies.iter().filter(|a| a.kind == kind).collect()
     }
     pub fn observations_of(&self, kind: ObservationKind) -> Vec<&ObservationDraft> {
-        self.observations.iter().filter(|(_, o)| o.kind == kind).map(|(_, o)| o).collect()
+        self.observations
+            .iter()
+            .filter(|(_, o)| o.kind == kind)
+            .map(|(_, o)| o)
+            .collect()
     }
     pub fn session_draft(&self, h: SessionHandle) -> &SessionDraft {
-        &self.sessions.iter().find(|(x, _)| *x == h).expect("session handle").1
+        &self
+            .sessions
+            .iter()
+            .find(|(x, _)| *x == h)
+            .expect("session handle")
+            .1
     }
 }
 
@@ -42,7 +55,10 @@ impl ParseSink for VecSink {
         self.updates.push((session, update));
     }
     fn find_session(&self, harness_session_id: &str) -> Option<SessionHandle> {
-        self.sessions.iter().find(|(_, s)| s.harness_session_id == harness_session_id).map(|(h, _)| *h)
+        self.sessions
+            .iter()
+            .find(|(_, s)| s.harness_session_id == harness_session_id)
+            .map(|(h, _)| *h)
     }
     fn find_source_file(&self, _rel_path: &std::path::Path) -> Option<SourceFileHandle> {
         None
@@ -71,7 +87,9 @@ impl ParseSink for VecSink {
     }
     fn blob(&mut self, bytes: &[u8]) -> String {
         let sha = sha256_hex(bytes);
-        self.blobs.entry(sha.clone()).or_insert_with(|| bytes.to_vec());
+        self.blobs
+            .entry(sha.clone())
+            .or_insert_with(|| bytes.to_vec());
         sha
     }
 }

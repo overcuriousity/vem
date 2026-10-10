@@ -33,24 +33,41 @@ fn resolve_output_path(out: &Path) -> std::io::Result<PathBuf> {
         let Some(name) = p.file_name().map(|n| n.to_os_string()) else {
             return p.canonicalize();
         };
-        let parent = p.parent().filter(|q| !q.as_os_str().is_empty()).unwrap_or(Path::new(".")).canonicalize()?;
+        let parent = p
+            .parent()
+            .filter(|q| !q.as_os_str().is_empty())
+            .unwrap_or(Path::new("."))
+            .canonicalize()?;
         let full = parent.join(name);
         match std::fs::symlink_metadata(&full) {
             Ok(m) if m.file_type().is_symlink() => {
                 let link = std::fs::read_link(&full)?;
-                p = if link.is_absolute() { link } else { parent.join(link) };
+                p = if link.is_absolute() {
+                    link
+                } else {
+                    parent.join(link)
+                };
             }
             _ => return Ok(full),
         }
     }
-    Err(std::io::Error::other(format!("too many levels of symbolic links at {}", out.display())))
+    Err(std::io::Error::other(format!(
+        "too many levels of symbolic links at {}",
+        out.display()
+    )))
 }
 
 /// Refuses a scope naming a root or session that does not exist.
 pub fn check_scope(case: &Case, scope: &Scope) -> Result<(), CaseError> {
     match *scope {
         Scope::Case => Ok(()),
-        Scope::Root(id) => query::roots(case)?.iter().any(|r| r.id == id).then_some(()).ok_or(CaseError::NoSuchRoot(id)),
-        Scope::Session(id) => query::session(case, id)?.map(|_| ()).ok_or(CaseError::NoSuchSession(id)),
+        Scope::Root(id) => query::roots(case)?
+            .iter()
+            .any(|r| r.id == id)
+            .then_some(())
+            .ok_or(CaseError::NoSuchRoot(id)),
+        Scope::Session(id) => query::session(case, id)?
+            .map(|_| ())
+            .ok_or(CaseError::NoSuchSession(id)),
     }
 }

@@ -10,11 +10,15 @@ const SIGNATURE_BYTES: usize = 16 * 1024;
 
 /// Discovery never follows symbolic links: a link in evidence is recorded in the manifest, not traversed.
 fn is_real_file(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).map(|m| m.is_file()).unwrap_or(false)
+    std::fs::symlink_metadata(path)
+        .map(|m| m.is_file())
+        .unwrap_or(false)
 }
 
 fn is_real_dir(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).map(|m| m.is_dir()).unwrap_or(false)
+    std::fs::symlink_metadata(path)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
 }
 
 fn head(path: &Path) -> Vec<u8> {
@@ -33,7 +37,9 @@ fn contains(hay: &[u8], needle: &str) -> bool {
 }
 
 pub fn is_transcript_name(name: &str) -> bool {
-    name.ends_with(".jsonl") || name.contains(".jsonl.orphaned-") || name.contains(".jsonl.superseded-")
+    name.ends_with(".jsonl")
+        || name.contains(".jsonl.orphaned-")
+        || name.contains(".jsonl.superseded-")
 }
 
 /// First transcript under `projects/` whose head carries both `parentUuid` and `sessionId`.
@@ -42,7 +48,14 @@ fn first_transcript_signature(root: &Path) -> Option<PathBuf> {
     if !is_real_dir(&projects) {
         return None;
     }
-    for entry in walkdir::WalkDir::new(&projects).max_depth(4).follow_links(false).follow_root_links(false).sort_by_file_name().into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(&projects)
+        .max_depth(4)
+        .follow_links(false)
+        .follow_root_links(false)
+        .sort_by_file_name()
+        .into_iter()
+        .flatten()
+    {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -66,7 +79,10 @@ fn history_signature(root: &Path) -> bool {
 pub fn identify(root: &Path) -> Option<Identification> {
     let mut evidence = Vec::new();
     if let Some(p) = first_transcript_signature(root) {
-        evidence.push(format!("projects transcript carrying parentUuid and sessionId: {}", p.display()));
+        evidence.push(format!(
+            "projects transcript carrying parentUuid and sessionId: {}",
+            p.display()
+        ));
     }
     if history_signature(root) {
         evidence.push("history.jsonl carrying display and sessionId".to_string());
@@ -77,7 +93,10 @@ pub fn identify(root: &Path) -> Option<Identification> {
     if evidence.is_empty() {
         None
     } else {
-        Some(Identification { harness: Harness::ClaudeCode, evidence })
+        Some(Identification {
+            harness: Harness::ClaudeCode,
+            evidence,
+        })
     }
 }
 
@@ -93,7 +112,12 @@ pub fn list_files(root: &Path, rel: &Path) -> Vec<PathBuf> {
     if !is_real_dir(&abs) {
         return out;
     }
-    for entry in walkdir::WalkDir::new(&abs).follow_links(false).follow_root_links(false).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(&abs)
+        .follow_links(false)
+        .follow_root_links(false)
+        .into_iter()
+        .flatten()
+    {
         if entry.file_type().is_file() {
             if let Ok(r) = entry.path().strip_prefix(root) {
                 out.push(r.to_path_buf());
@@ -106,10 +130,16 @@ pub fn list_files(root: &Path, rel: &Path) -> Vec<PathBuf> {
 
 /// The newest harness version seen in the first versioned record of any transcript.
 fn detect_generation(root: &Path, files: &[PathBuf]) -> Option<String> {
-    let key = |v: &str| v.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let key = |v: &str| {
+        v.split('.')
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect::<Vec<_>>()
+    };
     let mut best: Option<String> = None;
     for f in files {
-        let Some(name) = f.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
+        let Some(name) = f.file_name().map(|n| n.to_string_lossy().to_string()) else {
+            continue;
+        };
         if !is_transcript_name(&name) {
             continue;
         }
@@ -138,8 +168,17 @@ pub fn discover(root: &Path) -> Discovery {
             continue;
         }
         let files = list_files(root, &rel_path);
-        let generation = if *kind == super::STORE_PROJECTS { detect_generation(root, &files) } else { None };
-        d.stores.push(StoreCandidate { kind: kind.to_string(), generation, rel_path, files });
+        let generation = if *kind == super::STORE_PROJECTS {
+            detect_generation(root, &files)
+        } else {
+            None
+        };
+        d.stores.push(StoreCandidate {
+            kind: kind.to_string(),
+            generation,
+            rel_path,
+            files,
+        });
     }
     d
 }

@@ -6,7 +6,9 @@ pub mod tools;
 pub mod transcript;
 
 use std::path::Path;
-use vem_core::adapter::{Discovery, FileContext, HarnessAdapter, Identification, ParseError, ParseOutcome};
+use vem_core::adapter::{
+    Discovery, FileContext, HarnessAdapter, Identification, ParseError, ParseOutcome,
+};
 use vem_core::model::Harness;
 use vem_core::sink::ParseSink;
 
@@ -42,7 +44,11 @@ impl HarnessAdapter for ClaudeCodeAdapter {
         discover::discover(root)
     }
 
-    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError> {
+    fn parse_file(
+        &self,
+        ctx: &FileContext<'_>,
+        sink: &mut dyn ParseSink,
+    ) -> Result<ParseOutcome, ParseError> {
         match ctx.store.kind.as_str() {
             STORE_PROJECTS => {
                 if transcript::classify_path(ctx.rel_path).is_some() {

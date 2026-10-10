@@ -3,8 +3,8 @@
 
 use crate::case::now;
 use crate::error::CaseError;
-use crate::link::{finalize_sessions, link_sessions};
 use crate::evidence::decode_rel_path;
+use crate::link::{finalize_sessions, link_sessions};
 use crate::sink::DbSink;
 use crate::{blobs, Case, TOOL_VERSION};
 use rusqlite::params;
@@ -35,7 +35,9 @@ pub struct IngestReport {
 }
 
 fn parse_ts_to_system_time(s: &str) -> Option<std::time::SystemTime> {
-    chrono::DateTime::parse_from_rfc3339(s).ok().map(std::time::SystemTime::from)
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(std::time::SystemTime::from)
 }
 
 struct FileRow {
@@ -50,7 +52,11 @@ struct FileRow {
 
 enum Resolved {
     /// Parse `path` (the retained copy when there is one) as source file `file_id`.
-    Ready { file_id: i64, path: PathBuf, mtime: Option<String> },
+    Ready {
+        file_id: i64,
+        path: PathBuf,
+        mtime: Option<String>,
+    },
     /// The evidence file cannot be read and there is no retained copy.
     Unavailable(String),
 }
@@ -59,30 +65,55 @@ enum Resolved {
 /// there is one, so the parser reads exactly the bytes `raw_record` will serve. Changed: record `hash_drift`,
 /// add a new `source_files` version with the new hash (retaining it too) and parse that version.
 /// Unreadable: parse the retained copy if there is one, so a detached case still ingests.
-fn resolve(case: &mut Case, f: &FileRow, live: &Path, report: &mut IngestReport) -> Result<Resolved, CaseError> {
+fn resolve(
+    case: &mut Case,
+    f: &FileRow,
+    live: &Path,
+    report: &mut IngestReport,
+) -> Result<Resolved, CaseError> {
     let case_dir = case.dir.clone();
     let retained_path = |sha: &str| blobs::path(&case_dir, sha);
     match sha256_file(live) {
-        Ok((sha, _)) if sha == f.sha256 => {
-            Ok(Resolved::Ready { file_id: f.id, path: if f.retained { retained_path(&f.sha256) } else { live.to_path_buf() }, mtime: f.mtime.clone() })
-        }
+        Ok((sha, _)) if sha == f.sha256 => Ok(Resolved::Ready {
+            file_id: f.id,
+            path: if f.retained {
+                retained_path(&f.sha256)
+            } else {
+                live.to_path_buf()
+            },
+            mtime: f.mtime.clone(),
+        }),
         Ok(_) => {
             let tx = case.conn.transaction()?;
-            let fresh = if f.retained { blobs::put_file(&tx, &case_dir, live) } else { sha256_file(live).map_err(CaseError::from) };
+            let fresh = if f.retained {
+                blobs::put_file(&tx, &case_dir, live)
+            } else {
+                sha256_file(live).map_err(CaseError::from)
+            };
             let (new_sha, new_size) = match fresh {
                 Ok(x) => x,
                 Err(e) => return Ok(Resolved::Unavailable(e.to_string())),
             };
             let meta = std::fs::symlink_metadata(live).ok();
-            let mtime = meta.as_ref().and_then(|m| m.modified().ok()).map(format_system_time);
-            let atime = meta.as_ref().and_then(|m| m.accessed().ok()).map(format_system_time);
+            let mtime = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .map(format_system_time);
+            let atime = meta
+                .as_ref()
+                .and_then(|m| m.accessed().ok())
+                .map(format_system_time);
             tx.execute(
                 "INSERT INTO source_files (root_id, store_id, rel_path, rel_path_encoded, kind, size, sha256, mtime, atime, retained, parse_status, version)
                  SELECT root_id, store_id, rel_path, rel_path_encoded, 'file', ?2, ?3, ?4, ?5, retained, 'unparsed', version + 1 FROM source_files WHERE id = ?1",
                 params![f.id, new_size as i64, new_sha, mtime, atime],
             )?;
             let new_id = tx.last_insert_rowid();
-            let version: i64 = tx.query_row("SELECT version FROM source_files WHERE id = ?1", [new_id], |r| r.get(0))?;
+            let version: i64 = tx.query_row(
+                "SELECT version FROM source_files WHERE id = ?1",
+                [new_id],
+                |r| r.get(0),
+            )?;
             tx.execute(
                 "UPDATE source_files SET parse_status = 'superseded', parse_error = ?2 WHERE id = ?1",
                 params![f.id, format!("content changed after attach; ingested as version {version} (source file {new_id})")],
@@ -98,14 +129,28 @@ fn resolve(case: &mut Case, f: &FileRow, live: &Path, report: &mut IngestReport)
             tx.commit()?;
             report.files_drifted += 1;
             report.anomalies += 1;
-            Ok(Resolved::Ready { file_id: new_id, path: if f.retained { retained_path(&new_sha) } else { live.to_path_buf() }, mtime })
+            Ok(Resolved::Ready {
+                file_id: new_id,
+                path: if f.retained {
+                    retained_path(&new_sha)
+                } else {
+                    live.to_path_buf()
+                },
+                mtime,
+            })
         }
         Err(e) => {
             let copy = retained_path(&f.sha256);
             if f.retained && copy.is_file() {
-                Ok(Resolved::Ready { file_id: f.id, path: copy, mtime: f.mtime.clone() })
+                Ok(Resolved::Ready {
+                    file_id: f.id,
+                    path: copy,
+                    mtime: f.mtime.clone(),
+                })
             } else {
-                Ok(Resolved::Unavailable(format!("io error: evidence file unavailable and no retained copy: {e}")))
+                Ok(Resolved::Unavailable(format!(
+                    "io error: evidence file unavailable and no retained copy: {e}"
+                )))
             }
         }
     }
@@ -123,26 +168,40 @@ fn mark_failed(case: &Case, file_id: i64, error: &str) -> Result<(), CaseError> 
 /// (no partial rows), marked `failed` with its error, and retried on the next ingest.
 pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport, CaseError> {
     let roots: Vec<(i64, String, String)> = {
-        let mut stmt = case.conn.prepare("SELECT id, path, harness FROM evidence_roots ORDER BY id")?;
+        let mut stmt = case
+            .conn
+            .prepare("SELECT id, path, harness FROM evidence_roots ORDER BY id")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.collect::<Result<_, _>>()?
     };
-    let roots: Vec<_> = roots.into_iter().filter(|(id, _, _)| root_filter.map(|f| f == *id).unwrap_or(true)).collect();
+    let roots: Vec<_> = roots
+        .into_iter()
+        .filter(|(id, _, _)| root_filter.map(|f| f == *id).unwrap_or(true))
+        .collect();
     if let Some(f) = root_filter {
         if roots.is_empty() {
             return Err(CaseError::NoSuchRoot(f));
         }
     }
-    let mut report = IngestReport { tool_version: TOOL_VERSION.to_string(), ..Default::default() };
+    let mut report = IngestReport {
+        tool_version: TOOL_VERSION.to_string(),
+        ..Default::default()
+    };
     let case_dir = case.dir.clone();
 
     for (root_id, root_path, harness) in roots {
-        let harness = Harness::parse(&harness).ok_or_else(|| CaseError::NoAdapter(harness.clone()))?;
-        let adapter = vem_adapters::adapter_for(harness).ok_or_else(|| CaseError::NoAdapter(harness.to_string()))?;
+        let harness =
+            Harness::parse(&harness).ok_or_else(|| CaseError::NoAdapter(harness.clone()))?;
+        let adapter = vem_adapters::adapter_for(harness)
+            .ok_or_else(|| CaseError::NoAdapter(harness.to_string()))?;
         let root = PathBuf::from(&root_path);
         let stores: Vec<(i64, String, Option<String>, String)> = {
-            let mut stmt = case.conn.prepare("SELECT id, kind, generation, rel_path FROM stores WHERE root_id = ?1 ORDER BY id")?;
-            let rows = stmt.query_map([root_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+            let mut stmt = case.conn.prepare(
+                "SELECT id, kind, generation, rel_path FROM stores WHERE root_id = ?1 ORDER BY id",
+            )?;
+            let rows = stmt.query_map([root_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?;
             rows.collect::<Result<_, _>>()?
         };
         for (store_id, kind, generation, store_rel) in stores {
@@ -154,7 +213,15 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                      ORDER BY rel_path",
                 )?;
                 let rows = stmt.query_map([store_id], |r| {
-                    Ok(FileRow { id: r.get(0)?, rel: r.get(1)?, encoded: r.get(2)?, mtime: r.get(3)?, status: r.get(4)?, sha256: r.get(5)?, retained: r.get::<_, i64>(6)? == 1 })
+                    Ok(FileRow {
+                        id: r.get(0)?,
+                        rel: r.get(1)?,
+                        encoded: r.get(2)?,
+                        mtime: r.get(3)?,
+                        status: r.get(4)?,
+                        sha256: r.get(5)?,
+                        retained: r.get::<_, i64>(6)? == 1,
+                    })
                 })?;
                 rows.collect::<Result<_, _>>()?
             };
@@ -162,7 +229,10 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                 kind: kind.clone(),
                 generation,
                 rel_path: PathBuf::from(&store_rel),
-                files: all_files.iter().map(|f| decode_rel_path(&f.rel, f.encoded)).collect(),
+                files: all_files
+                    .iter()
+                    .map(|f| decode_rel_path(&f.rel, f.encoded))
+                    .collect(),
             };
             let mut store_records = 0i64;
             for f in &all_files {
@@ -171,14 +241,19 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     continue;
                 }
                 let rel_path = decode_rel_path(&f.rel, f.encoded);
-                let (file_id, parse_path, mtime) = match resolve(case, f, &root.join(&rel_path), &mut report)? {
-                    Resolved::Ready { file_id, path, mtime } => (file_id, path, mtime),
-                    Resolved::Unavailable(err) => {
-                        mark_failed(case, f.id, &err)?;
-                        report.files_failed += 1;
-                        continue;
-                    }
-                };
+                let (file_id, parse_path, mtime) =
+                    match resolve(case, f, &root.join(&rel_path), &mut report)? {
+                        Resolved::Ready {
+                            file_id,
+                            path,
+                            mtime,
+                        } => (file_id, path, mtime),
+                        Resolved::Unavailable(err) => {
+                            mark_failed(case, f.id, &err)?;
+                            report.files_failed += 1;
+                            continue;
+                        }
+                    };
                 let ctx = FileContext {
                     root: &root,
                     store: &candidate,
@@ -191,7 +266,12 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                 let (parsed, counts, sink_error, parsers) = {
                     let mut sink = DbSink::new(&tx, &case_dir, root_id, store_id, file_id);
                     let parsed = adapter.parse_file(&ctx, &mut sink);
-                    (parsed, sink.counts, sink.error.take(), std::mem::take(&mut sink.parsers))
+                    (
+                        parsed,
+                        sink.counts,
+                        sink.error.take(),
+                        std::mem::take(&mut sink.parsers),
+                    )
                 };
                 if let Some(e) = sink_error {
                     return Err(e);
@@ -231,8 +311,15 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                 [store_id],
                 |r| r.get(0),
             )?;
-            let status = if has_records > 0 || store_records > 0 { "parsed" } else { "inventoried" };
-            case.conn.execute("UPDATE stores SET status = ?2 WHERE id = ?1", params![store_id, status])?;
+            let status = if has_records > 0 || store_records > 0 {
+                "parsed"
+            } else {
+                "inventoried"
+            };
+            case.conn.execute(
+                "UPDATE stores SET status = ?2 WHERE id = ?1",
+                params![store_id, status],
+            )?;
         }
         link_sessions(&case.conn, root_id)?;
         finalize_sessions(&case.conn, root_id)?;

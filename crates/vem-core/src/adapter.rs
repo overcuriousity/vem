@@ -63,5 +63,9 @@ pub trait HarnessAdapter: Send + Sync {
     fn discover(&self, root: &Path) -> Discovery;
     /// Parses one file of one store, emitting into `sink`. Must not panic on malformed input.
     /// Reads the file only through `ctx.abs_path`, which may be a retained copy rather than the evidence.
-    fn parse_file(&self, ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Result<ParseOutcome, ParseError>;
+    fn parse_file(
+        &self,
+        ctx: &FileContext<'_>,
+        sink: &mut dyn ParseSink,
+    ) -> Result<ParseOutcome, ParseError>;
 }

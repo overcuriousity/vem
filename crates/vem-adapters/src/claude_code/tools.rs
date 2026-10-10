@@ -37,7 +37,15 @@ fn blob_of(sink: &mut dyn ParseSink, s: Option<String>) -> Option<String> {
     s.map(|c| sink.blob(c.as_bytes()))
 }
 
-fn edit_observation(path: Option<String>, old: Option<String>, new: Option<String>, details: Value, tool_call: ToolCallHandle, at: &Timestamp, sink: &mut dyn ParseSink) -> ObservationDraft {
+fn edit_observation(
+    path: Option<String>,
+    old: Option<String>,
+    new: Option<String>,
+    details: Value,
+    tool_call: ToolCallHandle,
+    at: &Timestamp,
+    sink: &mut dyn ParseSink,
+) -> ObservationDraft {
     ObservationDraft {
         path,
         before_blob: blob_of(sink, old),
@@ -48,7 +56,14 @@ fn edit_observation(path: Option<String>, old: Option<String>, new: Option<Strin
 }
 
 /// Observations implied by one tool call. `result` is Claude Code's structured `toolUseResult`.
-pub fn derive_observations(name: &str, input: &Value, result: Option<&Value>, tool_call: ToolCallHandle, at: &Timestamp, sink: &mut dyn ParseSink) -> Vec<ObservationDraft> {
+pub fn derive_observations(
+    name: &str,
+    input: &Value,
+    result: Option<&Value>,
+    tool_call: ToolCallHandle,
+    at: &Timestamp,
+    sink: &mut dyn ParseSink,
+) -> Vec<ObservationDraft> {
     let r = |k: &str| result.and_then(|r| str_field(r, k));
     match name {
         "Bash" => vec![ObservationDraft {
@@ -137,7 +152,15 @@ pub fn derive_observations(name: &str, input: &Value, result: Option<&Value>, to
 }
 
 /// Registers `tool_use` blocks as pending and closes them when their `tool_result` arrives.
-pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandle, blocks: &[BlockDraft], tool_use_result: Option<&Value>, at: &Timestamp, prov: &Provenance, sink: &mut dyn ParseSink) {
+pub(crate) fn pair_blocks(
+    state: &mut TranscriptState<'_>,
+    message: MessageHandle,
+    blocks: &[BlockDraft],
+    tool_use_result: Option<&Value>,
+    at: &Timestamp,
+    prov: &Provenance,
+    sink: &mut dyn ParseSink,
+) {
     for (ordinal, b) in blocks.iter().enumerate() {
         let ordinal = ordinal as u32;
         match b.kind {
@@ -163,14 +186,21 @@ pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandl
                 let Some(id) = &b.tool_use_id else { continue };
                 match state.pending.remove(id) {
                     Some(p) => {
-                        let is_error = b.payload.get("is_error").and_then(Value::as_bool).unwrap_or(false);
+                        let is_error = b
+                            .payload
+                            .get("is_error")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
                         let handle = sink.tool_call(
                             state.session,
                             ToolCallDraft {
                                 name: p.name.clone(),
                                 category: categorize(&p.name),
                                 input: p.input.clone(),
-                                tool_use: BlockRef { message: p.message, ordinal: p.ordinal },
+                                tool_use: BlockRef {
+                                    message: p.message,
+                                    ordinal: p.ordinal,
+                                },
                                 tool_result: Some(BlockRef { message, ordinal }),
                                 result_text: b.text.clone(),
                                 result_payload: tool_use_result.cloned(),
@@ -180,7 +210,14 @@ pub(crate) fn pair_blocks(state: &mut TranscriptState<'_>, message: MessageHandl
                             },
                         );
                         // Observations are stamped with the tool_use time: when the command was issued.
-                        for obs in derive_observations(&p.name, &p.input, tool_use_result, handle, &p.started, sink) {
+                        for obs in derive_observations(
+                            &p.name,
+                            &p.input,
+                            tool_use_result,
+                            handle,
+                            &p.started,
+                            sink,
+                        ) {
                             sink.observation(state.session, obs);
                         }
                     }
@@ -217,7 +254,10 @@ fn emit_unfinished(state: &TranscriptState<'_>, p: PendingToolUse, sink: &mut dy
             name: p.name.clone(),
             category: categorize(&p.name),
             input: p.input.clone(),
-            tool_use: BlockRef { message: p.message, ordinal: p.ordinal },
+            tool_use: BlockRef {
+                message: p.message,
+                ordinal: p.ordinal,
+            },
             tool_result: None,
             result_text: None,
             result_payload: None,

@@ -1,11 +1,11 @@
 //! Re-hash evidence files and retained blobs; record drift as `hash_drift` anomalies (spec §5).
 
 use crate::error::CaseError;
+use crate::evidence::decode_rel_path;
 use crate::{blobs, Case};
 use rusqlite::params;
 use serde::Serialize;
 use std::path::PathBuf;
-use crate::evidence::decode_rel_path;
 use vem_core::hash::{sha256_file, sha256_hex};
 
 #[derive(Debug, Default, Clone, Serialize)]
@@ -27,7 +27,17 @@ pub fn verify(case: &mut Case) -> Result<VerifyReport, CaseError> {
              WHERE f.version = (SELECT MAX(version) FROM source_files g WHERE g.root_id = f.root_id AND g.rel_path = f.rel_path AND g.rel_path_encoded = f.rel_path_encoded)
              ORDER BY r.id, f.rel_path",
         )?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        })?;
         rows.collect::<Result<_, _>>()?
     };
     for (file_id, root_id, root_path, rel, encoded, kind, expected) in files {
@@ -65,13 +75,16 @@ pub fn verify(case: &mut Case) -> Result<VerifyReport, CaseError> {
         }
     }
     let shas: Vec<String> = {
-        let mut stmt = case.conn.prepare("SELECT sha256 FROM blobs ORDER BY sha256")?;
+        let mut stmt = case
+            .conn
+            .prepare("SELECT sha256 FROM blobs ORDER BY sha256")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         rows.collect::<Result<_, _>>()?
     };
     for sha in shas {
         report.blobs_checked += 1;
-        let ok = matches!(sha256_file(&blobs::path(&case.dir, &sha)), Ok((actual, _)) if actual == sha);
+        let ok =
+            matches!(sha256_file(&blobs::path(&case.dir, &sha)), Ok((actual, _)) if actual == sha);
         if !ok {
             report.blob_errors.push(sha.clone());
             case.conn.execute(
