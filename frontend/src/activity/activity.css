@@ -1,0 +1,9 @@
+.activity-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.activity-layout.with-panel { grid-template-columns: minmax(0, 1fr) minmax(360px, 45%); }
+.tabs-nav { display: flex; gap: 12px; margin-bottom: 12px; }
+.tabs-nav a.active { font-weight: 700; }
+tr.selected td { background: var(--user-bg); }
+.linklike { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; text-align: left; }
+.preview img { max-width: 100%; border: 1px solid var(--border); }
+.hits section { margin-bottom: 16px; }
+mark { background: var(--inferred-bg); color: inherit; }
