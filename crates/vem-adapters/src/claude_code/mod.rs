@@ -4,6 +4,7 @@ pub mod discover;
 pub mod sidecars;
 pub mod tools;
 pub mod transcript;
+pub mod uploads;
 
 use std::path::Path;
 use vem_core::adapter::{
@@ -15,6 +16,8 @@ use vem_core::sink::ParseSink;
 pub const STORE_PROJECTS: &str = "claude:projects";
 pub const STORE_HISTORY: &str = "claude:history";
 pub const STORE_FILE_HISTORY: &str = "claude:file-history";
+pub const STORE_PASTE_CACHE: &str = "claude:paste-cache";
+pub const STORE_UPLOADS: &str = "claude:uploads";
 
 /// (store kind, path relative to root). Order matters: `projects` first so sidecars can find sessions.
 pub const EXPECTED_STORES: &[(&str, &str)] = &[
@@ -24,8 +27,8 @@ pub const EXPECTED_STORES: &[(&str, &str)] = &[
     ("claude:shell-snapshots", "shell-snapshots"),
     ("claude:todos", "todos"),
     ("claude:plans", "plans"),
-    ("claude:paste-cache", "paste-cache"),
-    ("claude:uploads", "uploads"),
+    (STORE_PASTE_CACHE, "paste-cache"),
+    (STORE_UPLOADS, "uploads"),
     ("claude:settings", "settings.json"),
 ];
 
@@ -60,6 +63,7 @@ impl HarnessAdapter for ClaudeCodeAdapter {
                 }
             }
             STORE_HISTORY => sidecars::parse_history(ctx, sink),
+            STORE_UPLOADS => uploads::parse_upload(ctx, sink),
             _ => Ok(ParseOutcome::NotParsed),
         }
     }

@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 vem-core = { path = "../vem-core" }
 vem-case = { path = "../vem-case" }
+vem-web = { path = "../vem-web" }
+tokio.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

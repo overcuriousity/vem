@@ -32,6 +32,8 @@ pub struct IngestReport {
     pub tool_version: String,
     /// `name/version` of every parser used in this run.
     pub parsers: BTreeSet<String>,
+    /// Version of the secret-candidate rule set applied at ingest (`secrets::RULESET_VERSION`).
+    pub secret_rules: String,
 }
 
 fn parse_ts_to_system_time(s: &str) -> Option<std::time::SystemTime> {
@@ -185,6 +187,7 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
     }
     let mut report = IngestReport {
         tool_version: TOOL_VERSION.to_string(),
+        secret_rules: crate::secrets::RULESET_VERSION.to_string(),
         ..Default::default()
     };
     let case_dir = case.dir.clone();
@@ -263,7 +266,7 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     mtime: mtime.as_deref().and_then(parse_ts_to_system_time),
                 };
                 let tx = case.conn.transaction()?;
-                let (parsed, counts, sink_error, parsers) = {
+                let (parsed, counts, sink_error, parsers, created) = {
                     let mut sink = DbSink::new(&tx, &case_dir, root_id, store_id, file_id);
                     let parsed = adapter.parse_file(&ctx, &mut sink);
                     (
@@ -271,9 +274,12 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                         sink.counts,
                         sink.error.take(),
                         std::mem::take(&mut sink.parsers),
+                        std::mem::take(&mut sink.created_blobs),
                     )
                 };
                 if let Some(e) = sink_error {
+                    drop(tx);
+                    remove_orphan_blobs(case, &created)?;
                     return Err(e);
                 }
                 match parsed {
@@ -301,6 +307,7 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     }
                     Err(e) => {
                         drop(tx); // roll back: a failed file leaves no partial rows
+                        remove_orphan_blobs(case, &created)?;
                         mark_failed(case, file_id, &e.to_string())?;
                         report.files_failed += 1;
                     }
@@ -323,7 +330,24 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
         }
         link_sessions(&case.conn, root_id)?;
         finalize_sessions(&case.conn, root_id)?;
+        report.anomalies += crate::derive::flag_unreferenced_pastes(&case.conn, root_id)?;
     }
     case.audit("ingest", None, serde_json::to_value(&report)?)?;
     Ok(report)
+}
+
+/// Deletes blob files written by a rolled-back parse that no `blobs` row references. Returns how many.
+pub fn remove_orphan_blobs(case: &Case, shas: &[String]) -> Result<usize, CaseError> {
+    let mut removed = 0;
+    for sha in shas {
+        let indexed: bool = case.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM blobs WHERE sha256 = ?1)",
+            [sha],
+            |r| r.get(0),
+        )?;
+        if !indexed && std::fs::remove_file(blobs::path(&case.dir, sha)).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }

@@ -28,3 +28,7 @@ rustc-ice-*.txt
 
 # controller-managed task worktrees
 .worktrees/
+
+# frontend
+frontend/node_modules/
+frontend/dist/

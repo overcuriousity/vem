@@ -114,9 +114,9 @@ fn full_headless_workflow() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("33"));
+        .stdout(predicate::str::contains("34"));
     let text = std::fs::read_to_string(&jsonl).unwrap();
-    assert_eq!(text.lines().count(), 33);
+    assert_eq!(text.lines().count(), 34);
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert!(first.get("timestamp_desc").is_some());
 

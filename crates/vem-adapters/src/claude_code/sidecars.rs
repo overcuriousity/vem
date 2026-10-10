@@ -1,13 +1,14 @@
 //! Sidecar stores of a `.claude` directory: `history.jsonl` (prompt history with pasted content).
 
-use super::transcript::decode_record;
+use super::transcript::{decode_record, root_file_anomaly, unsafe_component};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::Path;
 use vem_core::adapter::{FileContext, ParseError, ParseOutcome};
 use vem_core::hash::sha256_hex;
-use vem_core::jsonl::JsonlReader;
+use vem_core::jsonl::{JsonlReader, DEFAULT_MAX_LEN};
 use vem_core::model::*;
 use vem_core::sink::ParseSink;
 
@@ -31,7 +32,8 @@ fn epoch_ms(v: Option<&Value>) -> Timestamp {
 }
 
 /// Each `history.jsonl` line is one submitted prompt: `display`, `pastedContents`, `timestamp` (ms), `project`, `sessionId`.
-/// Pasted content becomes a `paste_detected` observation. A session id whose transcript is in the manifest
+/// Pasted content becomes a `paste_detected` observation; a paste stored by `contentHash` is read from
+/// `paste-cache/<hash>.txt` through the manifest and retained as a blob. A session id whose transcript is in the manifest
 /// but not parsed yet fails the file, so it is retried after the transcript. A session id with no transcript is deletion evidence:
 /// it gets a `sidecar_only` session holding one `user` message per history line (so no prompt or paste is
 /// lost), and one `missing_transcript` anomaly linked to that session.
@@ -192,6 +194,59 @@ pub fn parse_history(
             },
         };
         if pasted {
+            let mut pastes = Vec::new();
+            for (key, entry) in v
+                .get("pastedContents")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+            {
+                let id = entry.get("id").cloned().unwrap_or_else(|| json!(key));
+                if let Some(content) = entry.get("content").and_then(Value::as_str) {
+                    pastes.push(json!({ "id": id, "inline": true, "size": content.len(), "missing": false }));
+                    continue;
+                }
+                let Some(hash) = entry.get("contentHash").and_then(Value::as_str) else {
+                    pastes.push(json!({ "id": id, "inline": false, "missing": true }));
+                    continue;
+                };
+                if let Some(reason) = unsafe_component(hash) {
+                    anomaly(
+                        sink,
+                        AnomalyKind::SuspiciousPath,
+                        Severity::Warning,
+                        Some(session),
+                        format!("paste contentHash {hash:?} {reason}; paste-cache not read"),
+                        json!({ "contentHash": hash }),
+                    );
+                    pastes.push(
+                        json!({ "id": id, "content_hash": hash, "inline": false, "missing": true }),
+                    );
+                    continue;
+                }
+                let rel = Path::new("paste-cache").join(format!("{hash}.txt"));
+                match sink.read_root_file(&rel, DEFAULT_MAX_LEN as u64) {
+                    Ok(Some(bytes)) => {
+                        let blob = sink.blob(&bytes);
+                        pastes.push(json!({ "id": id, "content_hash": hash, "content_blob": blob, "size": bytes.len(), "inline": false, "missing": false }));
+                    }
+                    Ok(None) => pastes.push(
+                        json!({ "id": id, "content_hash": hash, "inline": false, "missing": true }),
+                    ),
+                    Err(e) => {
+                        let (kind, severity, reason) = root_file_anomaly(&e);
+                        anomaly(
+                            sink,
+                            kind,
+                            severity,
+                            Some(session),
+                            format!("paste-cache/{hash}.txt was not read: {reason}"),
+                            json!({ "contentHash": hash }),
+                        );
+                        pastes.push(json!({ "id": id, "content_hash": hash, "inline": false, "missing": true }));
+                    }
+                }
+            }
             sink.observation(
                 session,
                 ObservationDraft {
@@ -207,6 +262,7 @@ pub fn parse_history(
                         "display": v.get("display").cloned().unwrap_or(Value::Null),
                         "pastedContents": v.get("pastedContents").cloned().unwrap_or(Value::Null),
                         "project": v.get("project").cloned().unwrap_or(Value::Null),
+                        "pastes": pastes,
                     }),
                 },
             );

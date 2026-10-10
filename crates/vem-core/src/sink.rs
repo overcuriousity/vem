@@ -23,4 +23,25 @@ pub trait ParseSink {
     fn anomaly(&mut self, draft: AnomalyDraft);
     /// Stores content-addressed bytes and returns their SHA-256 hex.
     fn blob(&mut self, bytes: &[u8]) -> String;
+    /// Reads a file of this root by its path relative to the root, through the manifest (latest version):
+    /// the retained copy when there is one, otherwise the evidence file, re-hashed against the manifest.
+    /// `Ok(None)` when the manifest lists no regular file at `rel_path`.
+    fn read_root_file(
+        &self,
+        rel_path: &Path,
+        max_len: u64,
+    ) -> Result<Option<Vec<u8>>, RootFileError>;
+}
+
+/// Why `read_root_file` could not serve a file the manifest lists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RootFileError {
+    /// The path, or a directory on it, is a symbolic link: recorded, never followed.
+    Symlink,
+    /// Larger than the caller's cap.
+    TooLarge,
+    /// The bytes read do not hash to the manifest's SHA-256.
+    HashMismatch { expected: String, actual: String },
+    /// Listed in the manifest but cannot be read now (no retained copy, evidence gone).
+    Io(String),
 }

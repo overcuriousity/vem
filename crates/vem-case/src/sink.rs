@@ -2,13 +2,14 @@
 
 use crate::blobs;
 use crate::error::CaseError;
-use crate::evidence::encode_rel_path;
+use crate::evidence::{decode_rel_path, encode_rel_path};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use vem_core::hash::sha256_hex;
 use vem_core::model::*;
-use vem_core::sink::ParseSink;
+use vem_core::sink::{ParseSink, RootFileError};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SinkCounts {
@@ -32,6 +33,8 @@ pub struct DbSink<'a> {
     pub parsers: BTreeSet<String>,
     /// First error hit inside a sink method; surfaced by `ingest` after `parse_file` returns.
     pub error: Option<CaseError>,
+    /// Blob files this sink wrote that did not exist before; removed again if the file's parse is rolled back.
+    pub created_blobs: Vec<String>,
 }
 
 impl<'a> DbSink<'a> {
@@ -52,6 +55,7 @@ impl<'a> DbSink<'a> {
             counts: SinkCounts::default(),
             parsers: BTreeSet::new(),
             error: None,
+            created_blobs: Vec::new(),
         }
     }
 
@@ -145,6 +149,34 @@ impl<'a> DbSink<'a> {
         Ok(())
     }
 
+    /// One `secret_candidate` observation per rule match in `text` (spec §4). `from` is
+    /// (tool call id, block id, provenance id): exactly one is `Some`.
+    fn insert_secrets(
+        &mut self,
+        session_id: i64,
+        text: &str,
+        field: &str,
+        from: (Option<i64>, Option<i64>, Option<i64>),
+        ts: &Timestamp,
+        extra: Option<(&str, Value)>,
+    ) -> Result<(), CaseError> {
+        for m in crate::secrets::scan(text) {
+            let mut details = serde_json::json!({
+                "rule": m.rule, "rule_version": crate::secrets::RULESET_VERSION, "field": field,
+                "offset": m.offset, "length": m.length, "match": m.matched,
+            });
+            if let Some((k, v)) = &extra {
+                details[*k] = v.clone();
+            }
+            self.conn.execute(
+                "INSERT INTO observations (session_id, kind, derived_from_tool_call_id, derived_from_block_id, derived_from_provenance_id, timestamp, ts_origin, confidence, details) VALUES (?1, 'secret_candidate', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![session_id, from.0, from.1, from.2, ts.value, ts.origin.as_str(), m.confidence, details.to_string()],
+            )?;
+            self.counts.observations += 1;
+        }
+        Ok(())
+    }
+
     fn try_message(&mut self, session: SessionHandle, m: &MessageDraft) -> Result<i64, CaseError> {
         let prov_id = self.insert_provenance(&m.provenance)?;
         let ordinal = self.ordinal_for(session)?;
@@ -158,6 +190,17 @@ impl<'a> DbSink<'a> {
                 "INSERT INTO blocks (message_id, ordinal, kind, text, payload, tool_use_id, provenance_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![message_id, i as i64, b.kind.as_str(), b.text, b.payload.to_string(), b.tool_use_id, prov_id],
             )?;
+            let block_id = self.conn.last_insert_rowid();
+            if let Some(text) = &b.text {
+                self.insert_secrets(
+                    session.0,
+                    text,
+                    b.kind.as_str(),
+                    (None, Some(block_id), None),
+                    &m.timestamp,
+                    None,
+                )?;
+            }
         }
         self.counts.messages += 1;
         Ok(message_id)
@@ -182,6 +225,14 @@ impl<'a> DbSink<'a> {
             "UPDATE blocks SET tool_call_id = ?1 WHERE id = ?2 OR id = ?3",
             params![id, use_id, result_id],
         )?;
+        self.insert_secrets(
+            session.0,
+            &t.input.to_string(),
+            "tool_input",
+            (Some(id), None, None),
+            &t.started,
+            None,
+        )?;
         self.counts.tool_calls += 1;
         Ok(id)
     }
@@ -201,6 +252,54 @@ impl<'a> DbSink<'a> {
             params![session.0, o.kind.as_str(), tc, blk, prov, o.path, o.command, o.before_blob, o.after_blob, o.timestamp.value, o.timestamp.origin.as_str(), o.confidence.as_str(), o.details.to_string()],
         )?;
         self.counts.observations += 1;
+        if o.kind == ObservationKind::PasteDetected {
+            let inline: Vec<(Value, String)> = o
+                .details
+                .get("pastedContents")
+                .and_then(Value::as_object)
+                .map(|m| {
+                    m.iter()
+                        .filter_map(|(k, e)| {
+                            e.get("content").and_then(Value::as_str).map(|c| {
+                                (
+                                    e.get("id")
+                                        .cloned()
+                                        .unwrap_or_else(|| Value::String(k.clone())),
+                                    c.to_string(),
+                                )
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let cached: Vec<(Value, String)> = o
+                .details
+                .get("pastes")
+                .and_then(Value::as_array)
+                .map(|ps| {
+                    ps.iter()
+                        .filter_map(|p| {
+                            let sha = p.get("content_blob").and_then(Value::as_str)?;
+                            let bytes = std::fs::read(blobs::path(self.case_dir, sha)).ok()?;
+                            Some((
+                                p.get("id").cloned().unwrap_or(Value::Null),
+                                String::from_utf8_lossy(&bytes).to_string(),
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (paste_id, text) in inline.into_iter().chain(cached) {
+                self.insert_secrets(
+                    session.0,
+                    &text,
+                    "paste",
+                    (None, None, prov),
+                    &o.timestamp,
+                    Some(("paste_id", paste_id)),
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -315,7 +414,73 @@ impl<'a> ParseSink for DbSink<'a> {
         self.fail(r);
     }
     fn blob(&mut self, bytes: &[u8]) -> String {
+        let existed = blobs::path(self.case_dir, &sha256_hex(bytes)).exists();
         let r = blobs::put_bytes(self.conn, self.case_dir, bytes);
-        self.fail(r)
+        let sha = self.fail(r);
+        if !existed && !sha.is_empty() {
+            self.created_blobs.push(sha.clone());
+        }
+        sha
+    }
+    fn read_root_file(
+        &self,
+        rel_path: &Path,
+        max_len: u64,
+    ) -> Result<Option<Vec<u8>>, RootFileError> {
+        let io = |e: rusqlite::Error| RootFileError::Io(e.to_string());
+        let (rel, encoded) = encode_rel_path(rel_path);
+        // A symbolic link at the path or at any directory on it is in the manifest as kind 'symlink'.
+        let mut prefix = String::new();
+        for part in rel.split('/') {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(part);
+            let link = self
+                .conn
+                .query_row("SELECT 1 FROM source_files WHERE root_id = ?1 AND rel_path = ?2 AND kind = 'symlink'", params![self.root_id, prefix], |_| Ok(()))
+                .optional()
+                .map_err(io)?;
+            if link.is_some() {
+                return Err(RootFileError::Symlink);
+            }
+        }
+        let row: Option<(String, i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT sha256, retained, size FROM source_files WHERE root_id = ?1 AND rel_path = ?2 AND rel_path_encoded = ?3 AND kind = 'file' ORDER BY version DESC LIMIT 1",
+                params![self.root_id, rel, encoded],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(io)?;
+        let Some((sha, retained, size)) = row else {
+            return Ok(None);
+        };
+        if size as u64 > max_len {
+            return Err(RootFileError::TooLarge);
+        }
+        let path = if retained == 1 {
+            blobs::path(self.case_dir, &sha)
+        } else {
+            let root: String = self
+                .conn
+                .query_row(
+                    "SELECT path FROM evidence_roots WHERE id = ?1",
+                    [self.root_id],
+                    |r| r.get(0),
+                )
+                .map_err(io)?;
+            Path::new(&root).join(decode_rel_path(&rel, encoded))
+        };
+        let bytes = std::fs::read(&path).map_err(|e| RootFileError::Io(e.to_string()))?;
+        let actual = sha256_hex(&bytes);
+        if actual != sha {
+            return Err(RootFileError::HashMismatch {
+                expected: sha,
+                actual,
+            });
+        }
+        Ok(Some(bytes))
     }
 }

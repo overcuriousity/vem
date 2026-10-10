@@ -1,0 +1,11 @@
+.totals { display: flex; gap: 16px; flex-wrap: wrap; }
+.totals div { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; }
+.callout { border-left: 4px solid var(--inferred); background: var(--inferred-bg); padding: 6px 12px; margin: 8px 0; }
+.tree details { margin-left: 14px; }
+.tree summary { cursor: pointer; font-family: var(--mono); }
+.tree .file { display: flex; gap: 10px; margin-left: 28px; font-family: var(--mono); font-size: 12.5px; flex-wrap: wrap; }
+td.depth-1 { padding-left: 28px; }
+td.depth-2 { padding-left: 48px; }
+td.depth-3 { padding-left: 68px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+.filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }

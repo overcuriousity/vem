@@ -9,6 +9,9 @@
 # If tag v<version> exists but has no release, publish fails rather than reuse the tag:
 # the tag may point at a different commit than the one just built.
 #
+# The frontend is built once and handed to every target build as an artifact, so each binary
+# embeds the same UI. VEM_ALLOW_NO_FRONTEND is never set here: a release without the UI fails.
+#
 # Asset names carry no version (vem-<target>.tar.gz / .zip) so that
 # releases/latest/download/<asset> and install.sh stay stable.
 name: Release
@@ -37,7 +40,28 @@ jobs:
     if: github.event_name != 'pull_request'
     uses: ./.github/workflows/ci.yml
 
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+
   build:
+    needs: frontend
     strategy:
       fail-fast: false
       matrix:
@@ -55,6 +79,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -108,6 +136,32 @@ jobs:
           set -eu
           VEM_DOWNLOAD_BASE="file://$PWD/dist" VEM_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
           "$RUNNER_TEMP/bin/vem" --version
+      - name: vem serve answers with the embedded UI and the ingested sessions
+        run: |
+          set -eu
+          vem="$RUNNER_TEMP/bin/vem"
+          work="$RUNNER_TEMP/serve"
+          mkdir -p "$work"
+          cp -R fixtures/claude-code/basic "$work/evidence"
+          "$vem" case new "$work/case" --name installer
+          "$vem" evidence add "$work/case" "$work/evidence" --label basic
+          "$vem" ingest "$work/case"
+          # Run from an empty directory: the UI must come from the binary, not from frontend/.
+          cd "$work"
+          "$vem" serve "$work/case" --port 0 --no-open > serve.out 2> serve.err &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          url=""
+          for _ in $(seq 50); do
+            url=$(grep -o 'http://127\.0\.0\.1:[0-9]*/' serve.out | head -n1 || true)
+            [ -n "$url" ] && curl -fsS "${url}api/case" >/dev/null 2>&1 && break
+            sleep 0.2
+          done
+          [ -n "$url" ] || { cat serve.out serve.err; exit 1; }
+          curl -fsS "$url" | grep -q '<div id="root"></div>'
+          sessions=$(curl -fsS "${url}api/sessions" | jq length)
+          echo "GET / served index.html; GET /api/sessions returned $sessions sessions"
+          [ "$sessions" -eq 5 ]
 
   publish:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

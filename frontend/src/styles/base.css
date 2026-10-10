@@ -1,0 +1,28 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
+code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+a { color: var(--accent); }
+.shell { display: flex; flex-direction: column; min-height: 100vh; }
+.topbar { display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10; }
+.topbar .brand { font-weight: 700; }
+.topbar nav { display: flex; gap: 12px; }
+.topbar nav a { text-decoration: none; color: var(--muted); }
+.topbar nav a.active { color: var(--fg); font-weight: 600; }
+.topbar form { margin-left: auto; }
+.topbar input[type="search"] { width: 280px; padding: 4px 8px; }
+.content { padding: 16px; flex: 1; min-width: 0; }
+.muted { color: var(--muted); }
+table.grid { border-collapse: collapse; width: 100%; }
+table.grid th, table.grid td { border-bottom: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+table.grid th { font-weight: 600; color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.badge { display: inline-block; font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 8px; border: 1px solid transparent; white-space: nowrap; }
+.badge-stored { color: var(--stored); background: var(--stored-bg); border-color: var(--stored); }
+.badge-inferred { color: var(--inferred); background: var(--inferred-bg); border: 1px dashed var(--inferred); }
+.badge-absent { color: var(--absent); background: transparent; border-color: var(--absent); }
+.badge-local { color: var(--local); background: var(--local-bg); border-color: var(--local); }
+.badge-error { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+.badge-warning { color: var(--inferred); background: var(--inferred-bg); border-color: var(--inferred); }
+.badge-info { color: var(--muted); border-color: var(--border); }
+.derived { border-left: 3px solid var(--inferred); }
+.error-box { color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger); padding: 8px 12px; border-radius: 6px; }

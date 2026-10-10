@@ -39,6 +39,7 @@ str_enum!(AnomalyKind {
     FolderDateClockMismatch = "folder_date_clock_mismatch", HashDrift = "hash_drift", EmptyStore = "empty_store",
     OversizedRecord = "oversized_record", UnpairedToolResult = "unpaired_tool_result", MissingTranscript = "missing_transcript",
     SuspiciousPath = "suspicious_path", NonUtf8Path = "non_utf8_path", SymlinkInEvidence = "symlink_in_evidence", InvalidUtf8 = "invalid_utf8",
+    UnreadableFile = "unreadable_file",
 });
 str_enum!(Severity { Info = "info", Warning = "warning", Error = "error" });
 str_enum!(ProvOrigin { Stored = "stored", Derived = "derived", Inferred = "inferred" });

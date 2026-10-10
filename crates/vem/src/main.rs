@@ -61,6 +61,15 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// Serve the conversation viewer and JSON API on 127.0.0.1 only.
+    Serve {
+        case: PathBuf,
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+        /// Do not open the viewer in the default browser.
+        #[arg(long)]
+        no_open: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -172,6 +181,13 @@ fn main() {
             session,
             output,
         } => commands::export(&case, format, root, session, &output, cli.json),
+        Command::Serve {
+            case,
+            port,
+            no_open,
+        } => tokio::runtime::Runtime::new()
+            .map_err(vem_case::CaseError::from)
+            .and_then(|rt| rt.block_on(vem_web::serve(case, port, !no_open))),
     };
     match result {
         Ok(()) => {}

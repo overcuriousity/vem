@@ -11,7 +11,7 @@ use vem_core::adapter::{FileContext, ParseError, ParseOutcome};
 use vem_core::hash::sha256_hex;
 use vem_core::jsonl::{JsonlReader, RawRecord, DEFAULT_MAX_LEN};
 use vem_core::model::*;
-use vem_core::sink::ParseSink;
+use vem_core::sink::{ParseSink, RootFileError};
 
 pub const PARSER_NAME: &str = "claude_code.transcript";
 pub const PARSER_VERSION: &str = "1";
@@ -168,8 +168,7 @@ pub(crate) struct PendingToolUse {
     pub started: Timestamp,
 }
 
-pub(crate) struct TranscriptState<'a> {
-    pub root: &'a Path,
+pub(crate) struct TranscriptState {
     pub handle: SourceFileHandle,
     pub session: SessionHandle,
     pub session_id: String,
@@ -182,7 +181,7 @@ pub(crate) struct TranscriptState<'a> {
     pub pending: HashMap<String, PendingToolUse>,
 }
 
-impl<'a> TranscriptState<'a> {
+impl TranscriptState {
     /// A record-level anomaly about the record at `at`, or a file-level one when `at` is `None`.
     fn anomaly(
         &self,
@@ -459,14 +458,14 @@ impl<'a> TranscriptState<'a> {
         };
         let before_blob = match &backup_name {
             None => None,
-            Some(name) => match read_backup(self.root, &self.session_id, name) {
+            Some(name) => match read_backup(&*sink, &self.session_id, name) {
                 Ok(Some(bytes)) => Some(sink.blob(&bytes)),
                 Ok(None) => None,
-                Err((kind, reason)) => {
+                Err((kind, severity, reason)) => {
                     self.anomaly(
                         sink,
                         kind,
-                        Severity::Warning,
+                        severity,
                         Some(prov),
                         format!("file-history backup {name:?} was not read: {reason}"),
                         json!({ "backupFileName": name, "reason": reason }),
@@ -563,7 +562,6 @@ pub fn parse_transcript(
         last_ts: None,
     });
     let mut state = TranscriptState {
-        root: ctx.root,
         handle: ctx.handle,
         session,
         session_id: path.session_id.clone(),
@@ -718,7 +716,7 @@ pub fn join_evidence_path(dir: &str, tracking: &str) -> String {
 }
 
 /// Why a name taken from evidence data cannot be used as one path component, if it cannot.
-fn unsafe_component(name: &str) -> Option<&'static str> {
+pub(crate) fn unsafe_component(name: &str) -> Option<&'static str> {
     if name.is_empty() {
         return Some("empty name");
     }
@@ -735,46 +733,56 @@ fn unsafe_component(name: &str) -> Option<&'static str> {
     }
 }
 
-/// The backup `file-history/<session>/<name>` under `root`, read without following symbolic links.
-/// `Ok(None)` when it simply was not collected.
+/// Anomaly for a manifest file that could not be served: a link is suspicious, an oversized file is
+/// `oversized_record`, a hash mismatch or a vanished file is `hash_drift`.
+pub(crate) fn root_file_anomaly(e: &RootFileError) -> (AnomalyKind, Severity, String) {
+    match e {
+        RootFileError::Symlink => (
+            AnomalyKind::SuspiciousPath,
+            Severity::Warning,
+            "the file or a directory on its path is a symbolic link".into(),
+        ),
+        RootFileError::TooLarge => (
+            AnomalyKind::OversizedRecord,
+            Severity::Warning,
+            "the file exceeds the size cap".into(),
+        ),
+        RootFileError::HashMismatch { expected, actual } => (
+            AnomalyKind::HashDrift,
+            Severity::Error,
+            format!("the bytes hash to {actual}, the manifest says {expected}"),
+        ),
+        RootFileError::Io(err) => (
+            AnomalyKind::HashDrift,
+            Severity::Warning,
+            format!("listed in the manifest but unreadable and not retained: {err}"),
+        ),
+    }
+}
+
+/// The backup `file-history/<session>/<name>`, read through the manifest (retained copy first). `Ok(None)`
+/// when it simply was not collected.
 fn read_backup(
-    root: &Path,
+    sink: &dyn ParseSink,
     session_id: &str,
     name: &str,
-) -> Result<Option<Vec<u8>>, (AnomalyKind, String)> {
-    let suspicious = |r: &str| (AnomalyKind::SuspiciousPath, r.to_string());
+) -> Result<Option<Vec<u8>>, (AnomalyKind, Severity, String)> {
+    let suspicious = |r: &str| {
+        (
+            AnomalyKind::SuspiciousPath,
+            Severity::Warning,
+            r.to_string(),
+        )
+    };
     if let Some(r) = unsafe_component(name) {
         return Err(suspicious(&format!("backupFileName {r}")));
     }
     if let Some(r) = unsafe_component(session_id) {
         return Err(suspicious(&format!("session id {r}")));
     }
-    let dir = root.join("file-history");
-    let session_dir = dir.join(session_id);
-    for d in [&dir, &session_dir] {
-        match std::fs::symlink_metadata(d) {
-            Err(_) => return Ok(None),
-            Ok(m) if m.file_type().is_symlink() => {
-                return Err(suspicious(&format!("{} is a symbolic link", d.display())))
-            }
-            Ok(m) if !m.is_dir() => return Ok(None),
-            Ok(_) => {}
-        }
-    }
-    let file = session_dir.join(name);
-    match std::fs::symlink_metadata(&file) {
-        Err(_) => Ok(None),
-        Ok(m) if m.file_type().is_symlink() => Err(suspicious("the backup is a symbolic link")),
-        Ok(m) if !m.is_file() => Err(suspicious("the backup is not a regular file")),
-        Ok(_) => match read_capped(&file, DEFAULT_MAX_LEN as u64) {
-            Ok(Some(bytes)) => Ok(Some(bytes)),
-            Ok(None) => Err((
-                AnomalyKind::OversizedRecord,
-                "the backup exceeds the size cap".to_string(),
-            )),
-            Err(_) => Ok(None),
-        },
-    }
+    let rel = Path::new("file-history").join(session_id).join(name);
+    sink.read_root_file(&rel, DEFAULT_MAX_LEN as u64)
+        .map_err(|e| root_file_anomaly(&e))
 }
 
 /// `agent-<id>.meta.json` next to a subagent transcript, parsed as its own source file so its provenance

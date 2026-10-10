@@ -150,7 +150,7 @@ fn reads_messages_blocks_tool_calls_observations_claims() {
     assert_eq!(obs.len(), 1);
     assert_eq!(obs[0].command.as_deref(), Some("ls -la"));
     let all_obs = observations(&case, &ObservationFilter::default()).unwrap();
-    assert_eq!(all_obs.len(), 6);
+    assert_eq!(all_obs.len(), 7);
     let cl = claims(&case, s1.id).unwrap();
     assert!(cl
         .iter()

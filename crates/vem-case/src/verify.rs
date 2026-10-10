@@ -16,6 +16,7 @@ pub struct VerifyReport {
     pub roots_unavailable: Vec<String>,
     pub blobs_checked: usize,
     pub blob_errors: Vec<String>,
+    pub unindexed_blobs: Vec<String>,
 }
 
 pub fn verify(case: &mut Case) -> Result<VerifyReport, CaseError> {
@@ -93,6 +94,19 @@ pub fn verify(case: &mut Case) -> Result<VerifyReport, CaseError> {
             )?;
         }
     }
+    // Files in blobs/ the index does not know (left by an interrupted run). Reported, never deleted.
+    let indexed: std::collections::HashSet<String> = {
+        let mut stmt = case.conn.prepare("SELECT sha256 FROM blobs")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut unindexed: Vec<String> = std::fs::read_dir(case.dir.join("blobs"))?
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .filter(|n| !indexed.contains(n))
+        .collect();
+    unindexed.sort();
+    report.unindexed_blobs = unindexed;
     case.audit("verify", None, serde_json::to_value(&report)?)?;
     Ok(report)
 }

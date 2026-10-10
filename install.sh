@@ -2,7 +2,7 @@
 # vem installer for Linux and macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | VEM_VERSION=v0.1.0 sh
+#   curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | VEM_VERSION=v0.2.0 sh
 #
 # Environment:
 #   VEM_VERSION       release tag to install, e.g. v0.1.0 or nightly (default: latest release)

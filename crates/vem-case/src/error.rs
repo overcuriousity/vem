@@ -32,4 +32,8 @@ pub enum CaseError {
     EvidenceOverlapsCase { root: PathBuf, case: PathBuf },
     #[error("no session with id {0}")]
     NoSuchSession(i64),
+    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("invalid: {0}")]
+    Invalid(String),
 }

@@ -1,0 +1,3 @@
+{"display":"Set up the deploy config [Pasted text #1 +2 lines]","pastedContents":{"1":{"id":1,"type":"text","contentHash":"a1b2c3d4e5f60718"}},"timestamp":1790845200000,"project":"/home/bob/app","sessionId":"e1e1e1e1-0000-4000-8000-000000000001"}
+{"display":"[Pasted text #2] use this","pastedContents":{"2":{"id":2,"type":"text","content":"aws_access_key_id = AKIAIOSFODNN7EXAMPLE"}},"timestamp":1790845230000,"project":"/home/bob/app","sessionId":"e1e1e1e1-0000-4000-8000-000000000001"}
+{"display":"[Pasted text #3] the cache file of this paste is gone","pastedContents":{"3":{"id":3,"type":"text","contentHash":"ffffffffffffffff"}},"timestamp":1790845500000,"project":"/home/bob/app","sessionId":"e1e1e1e1-0000-4000-8000-000000000001"}

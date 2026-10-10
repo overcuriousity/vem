@@ -153,7 +153,7 @@ pub fn derive_observations(
 
 /// Registers `tool_use` blocks as pending and closes them when their `tool_result` arrives.
 pub(crate) fn pair_blocks(
-    state: &mut TranscriptState<'_>,
+    state: &mut TranscriptState,
     message: MessageHandle,
     blocks: &[BlockDraft],
     tool_use_result: Option<&Value>,
@@ -239,7 +239,7 @@ pub(crate) fn pair_blocks(
 }
 
 /// Tool uses that never received a result (interrupted session) become result-less tool calls.
-pub(crate) fn flush_unfinished(state: &mut TranscriptState<'_>, sink: &mut dyn ParseSink) {
+pub(crate) fn flush_unfinished(state: &mut TranscriptState, sink: &mut dyn ParseSink) {
     let mut pending: Vec<(String, PendingToolUse)> = state.pending.drain().collect();
     pending.sort_by_key(|a| (a.1.message.0, a.1.ordinal));
     for (_, p) in pending {
@@ -247,7 +247,7 @@ pub(crate) fn flush_unfinished(state: &mut TranscriptState<'_>, sink: &mut dyn P
     }
 }
 
-fn emit_unfinished(state: &TranscriptState<'_>, p: PendingToolUse, sink: &mut dyn ParseSink) {
+fn emit_unfinished(state: &TranscriptState, p: PendingToolUse, sink: &mut dyn ParseSink) {
     let handle = sink.tool_call(
         state.session,
         ToolCallDraft {
