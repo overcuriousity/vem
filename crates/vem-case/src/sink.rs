@@ -2,13 +2,14 @@
 
 use crate::blobs;
 use crate::error::CaseError;
-use crate::evidence::encode_rel_path;
+use crate::evidence::{decode_rel_path, encode_rel_path};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use vem_core::hash::sha256_hex;
 use vem_core::model::*;
-use vem_core::sink::ParseSink;
+use vem_core::sink::{ParseSink, RootFileError};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SinkCounts {
@@ -32,6 +33,8 @@ pub struct DbSink<'a> {
     pub parsers: BTreeSet<String>,
     /// First error hit inside a sink method; surfaced by `ingest` after `parse_file` returns.
     pub error: Option<CaseError>,
+    /// Blob files this sink wrote that did not exist before; removed again if the file's parse is rolled back.
+    pub created_blobs: Vec<String>,
 }
 
 impl<'a> DbSink<'a> {
@@ -52,6 +55,7 @@ impl<'a> DbSink<'a> {
             counts: SinkCounts::default(),
             parsers: BTreeSet::new(),
             error: None,
+            created_blobs: Vec::new(),
         }
     }
 
@@ -315,7 +319,73 @@ impl<'a> ParseSink for DbSink<'a> {
         self.fail(r);
     }
     fn blob(&mut self, bytes: &[u8]) -> String {
+        let existed = blobs::path(self.case_dir, &sha256_hex(bytes)).exists();
         let r = blobs::put_bytes(self.conn, self.case_dir, bytes);
-        self.fail(r)
+        let sha = self.fail(r);
+        if !existed && !sha.is_empty() {
+            self.created_blobs.push(sha.clone());
+        }
+        sha
+    }
+    fn read_root_file(
+        &self,
+        rel_path: &Path,
+        max_len: u64,
+    ) -> Result<Option<Vec<u8>>, RootFileError> {
+        let io = |e: rusqlite::Error| RootFileError::Io(e.to_string());
+        let (rel, encoded) = encode_rel_path(rel_path);
+        // A symbolic link at the path or at any directory on it is in the manifest as kind 'symlink'.
+        let mut prefix = String::new();
+        for part in rel.split('/') {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(part);
+            let link = self
+                .conn
+                .query_row("SELECT 1 FROM source_files WHERE root_id = ?1 AND rel_path = ?2 AND kind = 'symlink'", params![self.root_id, prefix], |_| Ok(()))
+                .optional()
+                .map_err(io)?;
+            if link.is_some() {
+                return Err(RootFileError::Symlink);
+            }
+        }
+        let row: Option<(String, i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT sha256, retained, size FROM source_files WHERE root_id = ?1 AND rel_path = ?2 AND rel_path_encoded = ?3 AND kind = 'file' ORDER BY version DESC LIMIT 1",
+                params![self.root_id, rel, encoded],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(io)?;
+        let Some((sha, retained, size)) = row else {
+            return Ok(None);
+        };
+        if size as u64 > max_len {
+            return Err(RootFileError::TooLarge);
+        }
+        let path = if retained == 1 {
+            blobs::path(self.case_dir, &sha)
+        } else {
+            let root: String = self
+                .conn
+                .query_row(
+                    "SELECT path FROM evidence_roots WHERE id = ?1",
+                    [self.root_id],
+                    |r| r.get(0),
+                )
+                .map_err(io)?;
+            Path::new(&root).join(decode_rel_path(&rel, encoded))
+        };
+        let bytes = std::fs::read(&path).map_err(|e| RootFileError::Io(e.to_string()))?;
+        let actual = sha256_hex(&bytes);
+        if actual != sha {
+            return Err(RootFileError::HashMismatch {
+                expected: sha,
+                actual,
+            });
+        }
+        Ok(Some(bytes))
     }
 }

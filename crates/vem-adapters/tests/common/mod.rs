@@ -33,6 +33,9 @@ pub fn parse_file_with_handle(
     handle: SourceFileHandle,
     sink: &mut VecSink,
 ) {
+    if sink.live_root.is_none() {
+        sink.live_root = Some(root.to_path_buf());
+    }
     let adapter = ClaudeCodeAdapter;
     let discovery = adapter.discover(root);
     let rel_path = PathBuf::from(rel);
@@ -76,4 +79,18 @@ pub fn temp_root_with_transcript(
     let rel = format!("projects/-tmp-proj/{session}.jsonl");
     std::fs::write(tmp.path().join(&rel), body).unwrap();
     (tmp, rel)
+}
+
+pub fn copy_dir(src: &Path, dst: &Path) {
+    for entry in walkdir::WalkDir::new(src) {
+        let entry = entry.unwrap();
+        let rel = entry.path().strip_prefix(src).unwrap();
+        let target = dst.join(rel);
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+        } else {
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
 }

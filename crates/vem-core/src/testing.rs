@@ -2,8 +2,9 @@
 
 use crate::hash::sha256_hex;
 use crate::model::*;
-use crate::sink::ParseSink;
+use crate::sink::{ParseSink, RootFileError};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default)]
 pub struct VecSink {
@@ -15,6 +16,11 @@ pub struct VecSink {
     pub claims: Vec<(SessionHandle, IdentityClaimDraft)>,
     pub anomalies: Vec<AnomalyDraft>,
     pub blobs: HashMap<String, Vec<u8>>,
+    /// Files served by `read_root_file`, by path relative to the root.
+    pub root_files: HashMap<PathBuf, Vec<u8>>,
+    /// When set and a path is not in `root_files`, `read_root_file` reads it under this directory without
+    /// following symbolic links (no manifest, so no hash check).
+    pub live_root: Option<PathBuf>,
 }
 
 impl VecSink {
@@ -91,5 +97,42 @@ impl ParseSink for VecSink {
             .entry(sha.clone())
             .or_insert_with(|| bytes.to_vec());
         sha
+    }
+    fn read_root_file(
+        &self,
+        rel_path: &Path,
+        max_len: u64,
+    ) -> Result<Option<Vec<u8>>, RootFileError> {
+        if let Some(b) = self.root_files.get(rel_path) {
+            return if b.len() as u64 > max_len {
+                Err(RootFileError::TooLarge)
+            } else {
+                Ok(Some(b.clone()))
+            };
+        }
+        let Some(root) = &self.live_root else {
+            return Ok(None);
+        };
+        let mut p = root.clone();
+        for c in rel_path.components() {
+            p.push(c);
+            match std::fs::symlink_metadata(&p) {
+                Err(_) => return Ok(None),
+                Ok(m) if m.file_type().is_symlink() => return Err(RootFileError::Symlink),
+                Ok(_) => {}
+            }
+        }
+        if !std::fs::symlink_metadata(&p)
+            .map(|m| m.is_file())
+            .unwrap_or(false)
+        {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&p).map_err(|e| RootFileError::Io(e.to_string()))?;
+        if bytes.len() as u64 > max_len {
+            Err(RootFileError::TooLarge)
+        } else {
+            Ok(Some(bytes))
+        }
     }
 }
