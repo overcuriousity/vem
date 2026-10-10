@@ -4,12 +4,16 @@ on:
   pull_request:
   push:
     branches: [main]
+  # release.yml calls this so that nothing is published from a commit that fails lint or tests.
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # github.workflow is the caller's name under workflow_call, so the CI run that release.yml
+  # makes never cancels (or gets cancelled by) the standalone CI run on the same ref.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:

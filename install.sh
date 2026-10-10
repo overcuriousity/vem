@@ -2,6 +2,7 @@
 # vem installer for Linux and macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/overcuriousity/vem/main/install.sh | VEM_VERSION=v0.1.0 sh
 #
 # Environment:
 #   VEM_VERSION       release tag to install, e.g. v0.1.0 or nightly (default: latest release)
@@ -62,12 +63,13 @@ else
 fi
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'rm -rf "$tmp"; exit 130' INT TERM
 
 echo "vem-install: downloading $asset ($version)"
-curl -fsSL --proto '=https,file' "$base/$asset" -o "$tmp/$asset" \
+curl -fsSL --proto '=https,file' --proto-redir '=https' "$base/$asset" -o "$tmp/$asset" \
   || err "download failed: $base/$asset"
-curl -fsSL --proto '=https,file' "$base/$asset.sha256" -o "$tmp/$asset.sha256" \
+curl -fsSL --proto '=https,file' --proto-redir '=https' "$base/$asset.sha256" -o "$tmp/$asset.sha256" \
   || err "checksum download failed: $base/$asset.sha256"
 
 expected="$(cut -d' ' -f1 <"$tmp/$asset.sha256")"
