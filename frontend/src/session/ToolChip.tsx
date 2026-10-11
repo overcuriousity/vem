@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { ObservationRow, SessionRow, ToolCallRow } from "../api/types";
 import { JsonView } from "../components/JsonView";
@@ -6,10 +6,16 @@ import { TruncatedText } from "../components/TruncatedText";
 import { chipSummary } from "./chip";
 import type { Selection } from "./selection";
 
-export function ToolChip({ tc, observations, childSessions, selected, onSelect }: {
-  tc: ToolCallRow; observations: ObservationRow[]; childSessions: SessionRow[]; selected: boolean; onSelect: (s: Selection) => void;
+/** `resultIds`: the tool-result records drawn in this chip; each gets a `message-N` anchor, and selecting one opens the chip. */
+export function ToolChip({ tc, resultIds, observations, childSessions, selection, onSelect }: {
+  tc: ToolCallRow; resultIds: number[]; observations: ObservationRow[]; childSessions: SessionRow[]; selection: Selection | null; onSelect: (s: Selection) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const selected = selection?.type === "toolcall" && selection.id === tc.id;
+  const resultSelected = selection?.type === "message" && resultIds.includes(selection.id);
+  const [open, setOpen] = useState(resultSelected);
+  useEffect(() => {
+    if (resultSelected) setOpen(true);
+  }, [resultSelected]);
   const { name, arg, status } = chipSummary(tc);
   const mine = observations.filter((o) => o.derived_from_tool_call_id === tc.id);
   const fileObs = mine.find((o) => o.kind === "file_written" || o.kind === "file_edited");
@@ -17,6 +23,7 @@ export function ToolChip({ tc, observations, childSessions, selected, onSelect }
   const child = typeof agentId === "string" ? childSessions.find((c) => c.harness_session_id === `agent-${agentId}` || c.harness_session_id === agentId) : undefined;
   return (
     <div className={`chip chip-${status.replace(" ", "-")}${selected ? " selected" : ""}`}>
+      {resultIds.map((id) => <span key={id} id={`message-${id}`} className="anchor" />)}
       <button type="button" className="chip-line" aria-expanded={open} onClick={() => setOpen(!open)}>
         {`${name}${arg ? ` · ${arg}` : ""} · ${status}`}
       </button>

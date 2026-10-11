@@ -16,6 +16,16 @@ export function absorbed(m: MessageRow): boolean {
   return m.content_class === "tool_result" && m.blocks.length > 0 && m.blocks.every((b) => b.kind === "tool_result" && b.tool_call_id !== null);
 }
 
+/** Tool call id → ids of the absorbed tool-result records drawn inside its chip (anchors for search links). */
+export function absorbedByCall(messages: MessageRow[]): Map<number, number[]> {
+  const out = new Map<number, number[]>();
+  for (const m of messages) {
+    if (!absorbed(m)) continue;
+    for (const id of new Set(m.blocks.map((b) => b.tool_call_id!))) out.set(id, [...(out.get(id) ?? []), m.id]);
+  }
+  return out;
+}
+
 /** The id of the record a card stands for (first record of a turn). */
 export function itemMessageId(i: StreamItem): number | null {
   return i.kind === "turn" ? i.messages[0].id : i.kind === "message" ? i.message.id : null;
