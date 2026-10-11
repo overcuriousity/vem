@@ -12,3 +12,14 @@ pre.json { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .masked button, .copyhash button { margin-left: 4px; font-size: 11px; }
 .truncated button { display: block; margin-top: 4px; }
 .integrity { font-weight: 700; }
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 8px; }
+.md ul, .md ol { padding-left: 22px; }
+.md pre { background: var(--meta-bg); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; overflow-x: auto; }
+.md code { font-family: var(--mono); font-size: 12.5px; }
+.md :not(pre) > code { background: var(--meta-bg); border-radius: 3px; padding: 0 3px; }
+.md blockquote { border-left: 3px solid var(--border); padding-left: 8px; color: var(--muted); }
+.md h1, .md h2, .md h3, .md h4 { font-size: 15px; margin: 8px 0 4px; }
+.md table { border-collapse: collapse; display: block; overflow-x: auto; }

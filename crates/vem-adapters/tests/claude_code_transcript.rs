@@ -53,7 +53,11 @@ fn blocks_carry_kinds_text_and_tool_use_ids() {
     assert_eq!(t1.blocks[0].tool_use_id.as_deref(), Some("toolu_bash1"));
     assert_eq!(t1.blocks[0].text.as_deref(), Some("README.md\nsrc\n"));
     assert!(t1.attributes.contains_key("cwd"));
-    assert!(!t1.attributes.contains_key("message"));
+    // `message` minus its content: role stays, the content lives in the blocks.
+    assert_eq!(
+        t1.attributes["message"],
+        serde_json::json!({ "role": "user" })
+    );
     assert!(!t1.attributes.contains_key("toolUseResult"));
 }
 

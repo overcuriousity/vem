@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { RootOverview, SessionRow, SourceFileRow } from "../api/types";
+import type { AnomalyRow, RootOverview, SessionRow, SourceFileRow } from "../api/types";
+import { groupAnomalies } from "./AnomalyTable";
+import { ingestLine } from "./RootCard";
 import { buildTree } from "./tree";
 import { nestSessions } from "./nest";
 import { renderWithProviders } from "../test/render";
@@ -42,7 +44,7 @@ const overview: RootOverview = {
   identification: ["history.jsonl carrying display and sessionId"],
   stores: [{ id: 1, root_id: 1, kind: "claude:projects", generation: "2.1.294", rel_path: "projects", discovery_method: "signature", status: "parsed", file_count: 6 }],
   absent: ["claude:todos"],
-  ingest: { counts: { parsed: 6, failed: 1 }, failed: [{ id: 9, rel_path: "projects/x.jsonl", parse_error: "io error" }], last_ingest: null },
+  ingest: { counts: { parsed: 6, failed: 1 }, files: 7, files_in_stores: 7, records: 31, failed: [{ id: 9, rel_path: "projects/x.jsonl", parse_error: "io error" }], last_ingest: null },
 };
 
 test("case home shows roots, absent stores, ingest status and filters anomalies via the URL", async () => {
@@ -56,6 +58,7 @@ test("case home shows roots, absent stores, ingest status and filters anomalies 
   expect(screen.getByText(/claude:todos/)).toBeInTheDocument();
   expect(screen.getByText(/request/i)).toBeInTheDocument();
   expect(screen.getByText("projects/x.jsonl")).toBeInTheDocument();
+  expect(screen.getByText(/files: 7 \(6 parsed · 1 failed\) · records parsed: 31/)).toBeInTheDocument();
   const table = await screen.findByRole("table", { name: "Anomalies" });
   expect(within(table).getByRole("link", { name: "session 5" })).toHaveAttribute("href", "/sessions/5");
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Severity" }), "error");
@@ -69,4 +72,31 @@ test("sessions page passes URL filters to the API and indents subagents", async 
   expect(await screen.findByRole("link", { name: "parent" })).toHaveAttribute("href", "/sessions/1");
   expect(api.sessions).toHaveBeenCalledWith({ kind: "primary", has_children: true });
   expect(screen.getByRole("link", { name: "child" }).closest("td")).toHaveClass("depth-1");
+});
+
+const anomaly = (id: number, message: string, severity: AnomalyRow["severity"] = "info"): AnomalyRow => ({
+  id, root_id: 1, store_id: 1, source_file_id: id, session_id: null, kind: "unknown_record_type", severity, byte_offset: 0, provenance_id: null, message, details: {},
+});
+
+test("anomalies are grouped by kind and message, worst severity first-seen order", () => {
+  const groups = groupAnomalies([anomaly(1, "a"), anomaly(2, "b"), anomaly(3, "a", "warning"), anomaly(4, "a")]);
+  expect(groups.map((g) => [g.message, g.rows.length, g.severity])).toEqual([["a", 3, "warning"], ["b", 1, "info"]]);
+});
+
+test("the anomaly table shows one row per group and expands to its occurrences", async () => {
+  vi.mocked(api.caseOverview).mockResolvedValue({ info: { name: "Case 1", examiner: "e", created_at: "t", tool_version: "0.3.0" }, totals: { sessions: 1, messages: 1, tool_calls: 0, observations: 0, anomalies_info: 4, anomalies_warning: 0, anomalies_error: 0 } });
+  vi.mocked(api.roots).mockResolvedValue([overview]);
+  vi.mocked(api.anomalies).mockResolvedValue([anomaly(1, "unknown record type \"x\""), anomaly(2, "unknown record type \"x\""), anomaly(3, "unknown record type \"x\""), anomaly(4, "other")]);
+  renderWithProviders(<CaseHome />);
+  const table = await screen.findByRole("table", { name: "Anomalies" });
+  expect(within(table).getAllByRole("row")).toHaveLength(3);
+  await userEvent.click(within(table).getByRole("button", { name: "show 3 occurrences" }));
+  expect(within(table).getAllByRole("row")).toHaveLength(6);
+  expect(within(table).getByText("file 2 @0")).toBeInTheDocument();
+});
+
+test("ingest line labels files and records", () => {
+  expect(ingestLine({ counts: { parsed: 2, unparsed: 5, inventoried: 1 }, files: 8, files_in_stores: 3, records: 40, failed: [], last_ingest: null }))
+    .toBe("files: 8, 3 in the stores above and 5 elsewhere in the root (2 parsed · 5 not parsed (no parser for them) · 1 inventoried only) · records parsed: 40");
+  expect(ingestLine({ counts: {}, files: 0, files_in_stores: 0, records: 0, failed: [], last_ingest: null })).toBe("not ingested");
 });

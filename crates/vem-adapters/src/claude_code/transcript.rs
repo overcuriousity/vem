@@ -14,7 +14,7 @@ use vem_core::model::*;
 use vem_core::sink::{ParseSink, RootFileError};
 
 pub const PARSER_NAME: &str = "claude_code.transcript";
-pub const PARSER_VERSION: &str = "1";
+pub const PARSER_VERSION: &str = "2";
 
 /// Record types that are session bookkeeping, not conversation. They become `meta` messages.
 const KNOWN_META: &[&str] = &[
@@ -30,6 +30,8 @@ const KNOWN_META: &[&str] = &[
     "file-history-snapshot",
     "file-history-delta",
     "queue-operation",
+    "cost-state",
+    "pr-link",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -336,12 +338,29 @@ impl TranscriptState {
         }
     }
 
+    /// The record's top-level fields. `toolUseResult` and `message.content` are left out because they are
+    /// stored as blocks and tool calls; the rest of `message` (API `id`, `stop_reason`, `usage`) is kept,
+    /// since the API message id is what ties the several records of one streamed response together.
     fn attributes_of(v: &Value) -> Map<String, Value> {
         let mut attrs = Map::new();
         if let Value::Object(obj) = v {
             for (k, val) in obj {
-                if k != "message" && k != "toolUseResult" {
-                    attrs.insert(k.clone(), val.clone());
+                match (k.as_str(), val) {
+                    ("toolUseResult", _) => {}
+                    ("message", Value::Object(msg)) => {
+                        let rest: Map<String, Value> = msg
+                            .iter()
+                            .filter(|(mk, _)| mk.as_str() != "content")
+                            .map(|(mk, mv)| (mk.clone(), mv.clone()))
+                            .collect();
+                        if !rest.is_empty() {
+                            attrs.insert(k.clone(), Value::Object(rest));
+                        }
+                    }
+                    ("message", _) => {}
+                    _ => {
+                        attrs.insert(k.clone(), val.clone());
+                    }
                 }
             }
         }

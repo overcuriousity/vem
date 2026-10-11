@@ -14,7 +14,7 @@ export interface RootRow { id: number; path: string; label: string; host: string
 export interface StoreRow { id: number; root_id: number; kind: string; generation: string | null; rel_path: string; discovery_method: string; status: string; file_count: number }
 export interface AuditRow { id: number; ts: string; action: string; target: string | null; details: unknown }
 export interface FailedFile { id: number; rel_path: string; parse_error: string | null }
-export interface IngestStatus { counts: Record<string, number>; failed: FailedFile[]; last_ingest: AuditRow | null }
+export interface IngestStatus { counts: Record<string, number>; files: number; files_in_stores: number; records: number; failed: FailedFile[]; last_ingest: AuditRow | null }
 export interface RootOverview { root: RootRow; identification: string[]; stores: StoreRow[]; absent: string[]; ingest: IngestStatus }
 
 export interface SourceFileRow {
@@ -44,6 +44,10 @@ export interface MessageRow {
   id: number; session_id: number; ordinal: number; role: string; harness_record_type: string;
   harness_uuid: string | null; parent_uuid: string | null; timestamp: string | null; ts_origin: Origin;
   model: string | null; provenance_id: number; origin: Origin; attributes: Record<string, unknown>; blocks: BlockRow[];
+  /** Records of one API response share it (message.id + requestId). */
+  turn_key: string | null;
+  /** prompt | command | command_output | caveat | injected | paste for user records, else the role (tool → tool_result). */
+  content_class: string;
 }
 export interface ToolCallRow {
   id: number; session_id: number; name: string; category: string; input: unknown; result_text: string | null;
