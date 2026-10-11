@@ -83,6 +83,41 @@ test("a turn card: one redacted-thinking marker, results inside their chips, a r
   expect(screen.getAllByRole("button", { name: /meta records? hidden/ }).map((b) => b.textContent)).toEqual(["1 meta record hidden", "2 meta records hidden"]);
 });
 
+test("?sel=message:N on an absorbed tool result flashes the turn holding its chip and opens the chip", () => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  const { messages, toolCalls } = realisticSession();
+  for (const meta of [false, true]) {
+    // Message 9 is the result of the call in message 8; meta record 7 sits between message 6's call and message 8.
+    const { unmount } = renderWithProviders(<Stream messages={messages} toolCalls={toolCalls} observations={[]} childSessions={[]} meta={meta} selection={{ type: "message", id: 9 }} onSelect={() => {}} onShowMeta={() => {}} />);
+    const anchor = document.getElementById("message-9")!;
+    const card = anchor.closest("article")!;
+    expect(card).toHaveClass("turn", "flash");
+    expect(card.id).toBe(meta ? "message-8" : "message-3");
+    expect(scroll.mock.contexts.at(-1)).toBe(card);
+    expect(within(card).getByRole("button", { name: "Bash · cmd2 · error" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(card).getByText("File does not exist.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bash · cmd1 · ok" })).toHaveAttribute("aria-expanded", "false");
+    unmount();
+  }
+  delete (Element.prototype as Partial<Element>).scrollIntoView;
+});
+
+test("an absorbed result separated from its call by meta records is still anchored in the call's chip", () => {
+  const use = block("tool_use", { tool_call_id: 30 });
+  const res = block("tool_result", { tool_call_id: 30, text: "late result" });
+  const messages = [turn(20, "msg_C|req_C", [use]), msg(21, "meta", []), msg(22, "system", []), msg(23, "tool", [res])];
+  const toolCalls = [call(30, use, res)];
+  for (const meta of [false, true]) {
+    const { unmount } = renderWithProviders(<Stream messages={messages} toolCalls={toolCalls} observations={[]} childSessions={[]} meta={meta} selection={{ type: "message", id: 23 }} onSelect={() => {}} onShowMeta={() => {}} />);
+    const card = document.getElementById("message-23")!.closest("article")!;
+    expect(card.id).toBe("message-20");
+    expect(card).toHaveClass("flash");
+    expect(within(card).getByText("late result")).toBeInTheDocument();
+    unmount();
+  }
+});
+
 test("assistant text is markdown, sanitized: no raw HTML, no live links", () => {
   const { messages, toolCalls } = realisticSession();
   renderWithProviders(<Stream messages={messages} toolCalls={toolCalls} observations={[]} childSessions={[]} meta={false} selection={null} onSelect={() => {}} onShowMeta={() => {}} />);

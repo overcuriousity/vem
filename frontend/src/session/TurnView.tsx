@@ -8,7 +8,7 @@ import { ToolChip } from "./ToolChip";
 import type { Selection } from "./selection";
 
 export interface CardProps {
-  toolCallsById: Map<number, ToolCallRow>; observations: ObservationRow[]; childSessions: SessionRow[];
+  toolCallsById: Map<number, ToolCallRow>; resultsByCall: Map<number, number[]>; observations: ObservationRow[]; childSessions: SessionRow[];
   selection: Selection | null; focused: boolean; onSelect: (s: Selection) => void;
 }
 
@@ -41,7 +41,7 @@ function TurnBlock({ block, p }: { block: BlockRow; p: CardProps }) {
       );
     case "tool_use":
       return tc ? (
-        <ToolChip tc={tc} observations={p.observations} childSessions={p.childSessions} selected={p.selection?.type === "toolcall" && p.selection.id === tc.id} onSelect={p.onSelect} />
+        <ToolChip tc={tc} resultIds={p.resultsByCall.get(tc.id) ?? []} selection={p.selection} observations={p.observations} childSessions={p.childSessions} onSelect={p.onSelect} />
       ) : (
         <div className="turn-block block-other">{raw}<span className="badge badge-warning">tool use without a tool call</span><JsonView value={block.payload} /></div>
       );

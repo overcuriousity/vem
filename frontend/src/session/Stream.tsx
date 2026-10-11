@@ -3,7 +3,7 @@ import type { MessageRow, ObservationRow, SessionRow, ToolCallRow } from "../api
 import { MessageView } from "./MessageView";
 import { TurnView } from "./TurnView";
 import { UserMessage } from "./UserMessage";
-import { itemMessageId, streamItems } from "./turns";
+import { absorbedByCall, itemMessageId, streamItems } from "./turns";
 import type { Selection } from "./selection";
 
 export { streamItems } from "./turns";
@@ -16,10 +16,12 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
 }) {
   const items = useMemo(() => streamItems(messages, meta), [messages, meta]);
   const toolCallsById = useMemo(() => new Map(toolCalls.map((t) => [t.id, t])), [toolCalls]);
+  const resultsByCall = useMemo(() => absorbedByCall(messages), [messages]);
   const visible = useMemo(() => items.flatMap((i) => { const id = itemMessageId(i); return id === null ? [] : [id]; }), [items]);
   const [focus, setFocus] = useState<number | null>(null);
 
-  // A link with ?sel=message:N (from search) scrolls to and flashes that message once.
+  // A link with ?sel=message:N (from search) scrolls to and flashes that message once. An absorbed
+  // tool-result record is anchored inside its tool chip, so the turn card holding that chip is flashed.
   useEffect(() => {
     if (selection?.type !== "message") return;
     const anchor = document.getElementById(`message-${selection.id}`);
@@ -50,7 +52,7 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, visible, onSelect]);
 
-  const card = { toolCallsById, observations, childSessions, selection, onSelect };
+  const card = { toolCallsById, resultsByCall, observations, childSessions, selection, onSelect };
   return (
     <div className="stream">
       {items.map((i) => {

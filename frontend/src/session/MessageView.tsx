@@ -8,7 +8,7 @@ import { ToolChip } from "./ToolChip";
 import type { Selection } from "./selection";
 
 interface Props {
-  message: MessageRow; toolCallsById: Map<number, ToolCallRow>; observations: ObservationRow[]; childSessions: SessionRow[];
+  message: MessageRow; toolCallsById: Map<number, ToolCallRow>; resultsByCall: Map<number, number[]>; observations: ObservationRow[]; childSessions: SessionRow[];
   selection: Selection | null; focused: boolean; onSelect: (s: Selection) => void;
 }
 
@@ -26,7 +26,7 @@ function BlockView({ block, p }: { block: BlockRow; p: Props }) {
       );
     case "tool_use":
       return tc ? (
-        <ToolChip tc={tc} observations={p.observations} childSessions={p.childSessions} selected={p.selection?.type === "toolcall" && p.selection.id === tc.id} onSelect={p.onSelect} />
+        <ToolChip tc={tc} resultIds={p.resultsByCall.get(tc.id) ?? []} selection={p.selection} observations={p.observations} childSessions={p.childSessions} onSelect={p.onSelect} />
       ) : (
         <div className="block-other"><span className="badge badge-warning">tool use without a tool call</span><JsonView value={block.payload} /></div>
       );
