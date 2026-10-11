@@ -136,7 +136,7 @@ fn ingests_fixture_into_canonical_rows() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|p| p == "claude_code.transcript/1"));
+        .any(|p| p == "claude_code.transcript/2"));
 }
 
 #[test]

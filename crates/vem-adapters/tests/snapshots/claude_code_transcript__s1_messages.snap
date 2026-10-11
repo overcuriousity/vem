@@ -29,7 +29,7 @@ expression: sink.messages
         "record_index": 0,
         "content_sha256": "05c650f9677476b6ec80db59cf33d64778b5a475b9d060383c9cf664d6e96ddb",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -60,7 +60,7 @@ expression: sink.messages
         "record_index": 1,
         "content_sha256": "e3559680e0c0633ce8821eaabcec55dc6f57c62135b0ed842d5d3871651acce4",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -83,6 +83,9 @@ expression: sink.messages
         "isSidechain": false,
         "promptId": "p1",
         "type": "user",
+        "message": {
+          "role": "user"
+        },
         "uuid": "u1u1u1u1-0000-4000-8000-000000000001",
         "timestamp": "2026-09-30T10:00:00.000Z",
         "permissionMode": "default",
@@ -108,7 +111,7 @@ expression: sink.messages
         "record_index": 2,
         "content_sha256": "e8705309921b4d654a9cd9ccec00babf43b43e15c4401fba27bc0933935eb3c8",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -129,6 +132,13 @@ expression: sink.messages
       "attributes": {
         "parentUuid": "u1u1u1u1-0000-4000-8000-000000000001",
         "isSidechain": false,
+        "message": {
+          "model": "claude-fable-5-1",
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "stop_reason": "tool_use"
+        },
         "requestId": "req_1",
         "type": "assistant",
         "uuid": "a1a1a1a1-0000-4000-8000-000000000001",
@@ -173,7 +183,7 @@ expression: sink.messages
         "record_index": 3,
         "content_sha256": "7b53037c0ea660c4e681b93330666495b323ffe03481d00900bad76d344999f4",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -196,6 +206,9 @@ expression: sink.messages
         "isSidechain": false,
         "promptId": "p1",
         "type": "user",
+        "message": {
+          "role": "user"
+        },
         "uuid": "u2u2u2u2-0000-4000-8000-000000000002",
         "timestamp": "2026-09-30T10:00:02.000Z",
         "sourceToolAssistantUUID": "a1a1a1a1-0000-4000-8000-000000000001",
@@ -227,7 +240,7 @@ expression: sink.messages
         "record_index": 4,
         "content_sha256": "ccb0d2b66335d99e926476be7b045d3bdc10503b3c74fe6c4e5b3390644b3fcd",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -248,6 +261,13 @@ expression: sink.messages
       "attributes": {
         "parentUuid": "u2u2u2u2-0000-4000-8000-000000000002",
         "isSidechain": false,
+        "message": {
+          "model": "claude-fable-5-1",
+          "id": "msg_2",
+          "type": "message",
+          "role": "assistant",
+          "stop_reason": "tool_use"
+        },
         "requestId": "req_2",
         "type": "assistant",
         "uuid": "a2a2a2a2-0000-4000-8000-000000000002",
@@ -282,7 +302,7 @@ expression: sink.messages
         "record_index": 5,
         "content_sha256": "484da5905c6456e8f6e2955e971081041a930e734b0b30c0184abf2d82b0602a",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -305,6 +325,9 @@ expression: sink.messages
         "isSidechain": false,
         "promptId": "p1",
         "type": "user",
+        "message": {
+          "role": "user"
+        },
         "uuid": "u3u3u3u3-0000-4000-8000-000000000003",
         "timestamp": "2026-09-30T10:00:04.000Z",
         "sourceToolAssistantUUID": "a2a2a2a2-0000-4000-8000-000000000002",
@@ -335,7 +358,7 @@ expression: sink.messages
         "record_index": 6,
         "content_sha256": "454bf8f3da4b56afe5ce97198aee208c1eb057b5fb770335b3d385062b3ca2c9",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -378,7 +401,7 @@ expression: sink.messages
         "record_index": 7,
         "content_sha256": "8226094f997e2e49558cb1bbf139d37bd324d27717d85aceaeb855cd2c747fb8",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -417,7 +440,7 @@ expression: sink.messages
         "record_index": 8,
         "content_sha256": "331c9f067d5581f41bfabc4b25b36ef0b4e45d60d3e3f13f8b2f8471fb660573",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -438,6 +461,13 @@ expression: sink.messages
       "attributes": {
         "parentUuid": "u3u3u3u3-0000-4000-8000-000000000003",
         "isSidechain": false,
+        "message": {
+          "model": "claude-fable-5-1",
+          "id": "msg_3",
+          "type": "message",
+          "role": "assistant",
+          "stop_reason": "tool_use"
+        },
         "requestId": "req_3",
         "type": "assistant",
         "uuid": "a3a3a3a3-0000-4000-8000-000000000003",
@@ -473,7 +503,7 @@ expression: sink.messages
         "record_index": 9,
         "content_sha256": "0bd6ff6e3970954d3cbcfb90d772dd0c024f937c6933e62b842009287a848304",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -496,6 +526,9 @@ expression: sink.messages
         "isSidechain": false,
         "promptId": "p1",
         "type": "user",
+        "message": {
+          "role": "user"
+        },
         "uuid": "u4u4u4u4-0000-4000-8000-000000000004",
         "timestamp": "2026-09-30T10:00:06.000Z",
         "sourceToolAssistantUUID": "a3a3a3a3-0000-4000-8000-000000000003",
@@ -526,7 +559,7 @@ expression: sink.messages
         "record_index": 10,
         "content_sha256": "3e2ac7dfcef73147f627666eec5dfbe7011144500c45e08c4c6afc93b8d5ec59",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -547,6 +580,13 @@ expression: sink.messages
       "attributes": {
         "parentUuid": "u4u4u4u4-0000-4000-8000-000000000004",
         "isSidechain": false,
+        "message": {
+          "model": "claude-fable-5-1",
+          "id": "msg_4",
+          "type": "message",
+          "role": "assistant",
+          "stop_reason": "tool_use"
+        },
         "requestId": "req_4",
         "type": "assistant",
         "uuid": "a4a4a4a4-0000-4000-8000-000000000004",
@@ -582,7 +622,7 @@ expression: sink.messages
         "record_index": 11,
         "content_sha256": "75339a62497633d3515fadef0be99d7703786b39d9c033ea4490bbfc57829bcf",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -605,6 +645,9 @@ expression: sink.messages
         "isSidechain": false,
         "promptId": "p1",
         "type": "user",
+        "message": {
+          "role": "user"
+        },
         "uuid": "u5u5u5u5-0000-4000-8000-000000000005",
         "timestamp": "2026-09-30T10:00:09.000Z",
         "sourceToolAssistantUUID": "a4a4a4a4-0000-4000-8000-000000000004",
@@ -640,7 +683,7 @@ expression: sink.messages
         "record_index": 12,
         "content_sha256": "be26f8478ecd200d044a2b8114ca59cd400c39808855ea7324fecf5bfae753a2",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -661,6 +704,13 @@ expression: sink.messages
       "attributes": {
         "parentUuid": "u5u5u5u5-0000-4000-8000-000000000005",
         "isSidechain": false,
+        "message": {
+          "model": "claude-fable-5-1",
+          "id": "msg_5",
+          "type": "message",
+          "role": "assistant",
+          "stop_reason": "end_turn"
+        },
         "requestId": "req_5",
         "type": "assistant",
         "uuid": "a5a5a5a5-0000-4000-8000-000000000005",
@@ -690,7 +740,7 @@ expression: sink.messages
         "record_index": 13,
         "content_sha256": "dc6c46fa42137479ab8b17aa35563c249b7e2079b2d769cb7fa2db551981108e",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -733,7 +783,7 @@ expression: sink.messages
         "record_index": 14,
         "content_sha256": "dc2bb2afb0012b8ed606c7c653393592ff13f48f5abba421dd514506f0546db4",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
@@ -766,7 +816,7 @@ expression: sink.messages
         "record_index": 15,
         "content_sha256": "9b29d683f373a42e637bc9cf5bab95b3655c50a6fb01cda9afcde03561aa91a4",
         "parser_name": "claude_code.transcript",
-        "parser_version": "1",
+        "parser_version": "2",
         "origin": "stored"
       }
     }
