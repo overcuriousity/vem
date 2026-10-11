@@ -25,9 +25,14 @@ export function ToolChip({ tc, observations, childSessions, selected, onSelect }
       {child && <Link className="chip-link" to={`/sessions/${child.id}`}>subagent session</Link>}
       {open && (
         <div className="chip-body">
-          <h4>Input</h4>
+          <h4>Input <button type="button" className="raw-ref" aria-label={`Raw record of the ${name} call`} onClick={() => onSelect({ type: "block", id: tc.tool_use_block_id })}>raw</button></h4>
           <JsonView value={tc.input} />
-          <h4>Result</h4>
+          <h4>
+            Result <span className={`badge badge-${status === "error" ? "error" : status === "ok" ? "stored" : "absent"}`}>{status}</span>{" "}
+            {tc.tool_result_block_id !== null && (
+              <button type="button" className="raw-ref" aria-label={`Raw record of the ${name} result`} onClick={() => onSelect({ type: "block", id: tc.tool_result_block_id! })}>raw</button>
+            )}
+          </h4>
           {tc.result_text === null ? <p className="muted">No result recorded.</p> : <TruncatedText text={tc.result_text} />}
         </div>
       )}

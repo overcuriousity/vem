@@ -1,6 +1,19 @@
 import { useState } from "react";
-import type { RootOverview } from "../api/types";
+import type { IngestStatus, RootOverview } from "../api/types";
 import { InventoryTree } from "./InventoryTree";
+
+const STATUS_LABEL: Record<string, string> = {
+  parsed: "parsed", unparsed: "not parsed (no parser for them)", inventoried: "inventoried only", failed: "failed", superseded: "superseded",
+};
+
+/** `files: 692 (266 parsed · 423 not parsed …) · records: 3091`: every count says what it counts. */
+export function ingestLine(ingest: IngestStatus): string {
+  if (ingest.files === 0) return "not ingested";
+  const order = Object.keys(STATUS_LABEL);
+  const rank = (k: string) => (order.includes(k) ? order.indexOf(k) : order.length);
+  const parts = Object.entries(ingest.counts).sort(([a], [b]) => rank(a) - rank(b)).map(([k, v]) => `${v} ${STATUS_LABEL[k] ?? k}`);
+  return `files: ${ingest.files} (${parts.join(" · ")}) · records parsed: ${ingest.records}`;
+}
 
 export function RootCard({ overview }: { overview: RootOverview }) {
   const { root, stores, absent, ingest, identification } = overview;
@@ -30,7 +43,7 @@ export function RootCard({ overview }: { overview: RootOverview }) {
         </div>
       )}
       <h3>Ingest status</h3>
-      <p>{Object.entries(ingest.counts).map(([k, v]) => `${k}: ${v}`).join(" · ") || "not ingested"}{ingest.last_ingest && <span className="muted"> · last ingest {ingest.last_ingest.ts}</span>}</p>
+      <p>{ingestLine(ingest)}{ingest.last_ingest && <span className="muted"> · last ingest {ingest.last_ingest.ts}</span>}</p>
       {ingest.failed.length > 0 && (
         <ul>{ingest.failed.map((f) => <li key={f.id}><span className="mono">{f.rel_path}</span> <span className="muted">{f.parse_error}</span></li>)}</ul>
       )}

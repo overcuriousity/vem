@@ -1,25 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MessageRow, ObservationRow, SessionRow, ToolCallRow } from "../api/types";
 import { MessageView } from "./MessageView";
+import { TurnView } from "./TurnView";
+import { UserMessage } from "./UserMessage";
+import { itemMessageId, streamItems } from "./turns";
 import type { Selection } from "./selection";
 
-export type StreamItem = { kind: "message"; message: MessageRow } | { kind: "hidden"; count: number; key: string };
-const HIDDEN_ROLES = new Set(["meta", "system"]);
+export { streamItems } from "./turns";
 
-/** Messages in order; with `meta` off, each run of meta/system records collapses into one counted divider. */
-export function streamItems(messages: MessageRow[], meta: boolean): StreamItem[] {
-  const out: StreamItem[] = [];
-  for (const m of messages) {
-    if (meta || !HIDDEN_ROLES.has(m.role)) {
-      out.push({ kind: "message", message: m });
-      continue;
-    }
-    const last = out[out.length - 1];
-    if (last?.kind === "hidden") last.count += 1;
-    else out.push({ kind: "hidden", count: 1, key: `hidden-${m.id}` });
-  }
-  return out;
-}
+const USER_CLASSES = new Set(["prompt", "paste", "command", "command_output", "caveat", "injected", "tool_result"]);
 
 export function Stream({ messages, toolCalls, observations, childSessions, meta, selection, onSelect, onShowMeta }: {
   messages: MessageRow[]; toolCalls: ToolCallRow[]; observations: ObservationRow[]; childSessions: SessionRow[]; meta: boolean;
@@ -27,13 +16,14 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
 }) {
   const items = useMemo(() => streamItems(messages, meta), [messages, meta]);
   const toolCallsById = useMemo(() => new Map(toolCalls.map((t) => [t.id, t])), [toolCalls]);
-  const visible = useMemo(() => items.flatMap((i) => (i.kind === "message" ? [i.message.id] : [])), [items]);
+  const visible = useMemo(() => items.flatMap((i) => { const id = itemMessageId(i); return id === null ? [] : [id]; }), [items]);
   const [focus, setFocus] = useState<number | null>(null);
 
   // A link with ?sel=message:N (from search) scrolls to and flashes that message once.
   useEffect(() => {
     if (selection?.type !== "message") return;
-    const el = document.getElementById(`message-${selection.id}`);
+    const anchor = document.getElementById(`message-${selection.id}`);
+    const el = anchor?.closest("article") ?? anchor;
     el?.scrollIntoView?.({ block: "center" });
     el?.classList.add("flash");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,17 +50,22 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, visible, onSelect]);
 
+  const card = { toolCallsById, observations, childSessions, selection, onSelect };
   return (
     <div className="stream">
-      {items.map((i) =>
-        i.kind === "hidden" ? (
-          <button key={i.key} type="button" className="meta-divider" onClick={onShowMeta}>
-            {i.count} meta {i.count === 1 ? "record" : "records"} hidden
-          </button>
-        ) : (
-          <MessageView key={i.message.id} message={i.message} toolCallsById={toolCallsById} observations={observations} childSessions={childSessions} selection={selection} focused={focus === i.message.id} onSelect={onSelect} />
-        ),
-      )}
+      {items.map((i) => {
+        if (i.kind === "hidden") {
+          return (
+            <button key={i.key} type="button" className="meta-divider" onClick={onShowMeta}>
+              {i.count} meta {i.count === 1 ? "record" : "records"} hidden
+            </button>
+          );
+        }
+        const focused = focus === itemMessageId(i);
+        if (i.kind === "turn") return <TurnView key={i.key} messages={i.messages} p={{ ...card, focused }} />;
+        if (USER_CLASSES.has(i.message.content_class)) return <UserMessage key={i.key} message={i.message} p={{ ...card, focused }} />;
+        return <MessageView key={i.key} message={i.message} {...card} focused={focused} />;
+      })}
       {items.length === 0 && <p className="muted">This session has no messages.</p>}
     </div>
   );

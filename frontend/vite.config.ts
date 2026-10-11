@@ -5,7 +5,8 @@ import react from "@vitejs/plugin-react";
 // server's loopback guards accept dev requests.
 export default defineConfig({
   plugins: [react()],
-  build: { outDir: "dist", emptyOutDir: true, assetsInlineLimit: 0, sourcemap: false },
+  // One bundle embedded in the binary and served from loopback, so its size does not matter for load time.
+  build: { outDir: "dist", emptyOutDir: true, assetsInlineLimit: 0, sourcemap: false, chunkSizeWarningLimit: 1024 },
   server: {
     proxy: {
       "/api": {

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { BlockRow, MessageRow, ToolCallRow, SessionDetail, SessionRow } from "../api/types";
 import { chipSummary } from "./chip";
 import { Stream, streamItems } from "./Stream";
+import { itemMessageId } from "./turns";
 import { renderWithProviders } from "../test/render";
 import SessionView from "../pages/SessionView";
 import { api } from "../api/client";
@@ -17,9 +18,10 @@ vi.mock("../api/client", () => ({
 
 let nextBlock = 100;
 const block = (kind: string, extra: Partial<BlockRow> = {}): BlockRow => ({ id: nextBlock++, ordinal: 0, kind, text: null, payload: null, tool_use_id: null, tool_call_id: null, ...extra });
-const msg = (id: number, role: string, blocks: BlockRow[]): MessageRow => ({
+const msg = (id: number, role: string, blocks: BlockRow[], extra: Partial<MessageRow> = {}): MessageRow => ({
   id, session_id: 7, ordinal: id, role, harness_record_type: role, harness_uuid: null, parent_uuid: null,
   timestamp: "2026-09-30T10:00:00.000Z", ts_origin: "stored", model: null, provenance_id: id * 10, origin: "stored", attributes: {}, blocks,
+  turn_key: null, content_class: role === "tool" ? "tool_result" : role === "user" ? "prompt" : role, ...extra,
 });
 const tool = (id: number, name: string, input: unknown, extra: Partial<ToolCallRow> = {}): ToolCallRow => ({
   id, session_id: 7, name, category: "shell", input, result_text: "README.md\n", result_payload: null, is_error: false,
@@ -36,7 +38,7 @@ test("chip summaries pick the key argument and status", () => {
 test("meta and system records are grouped into hidden dividers", () => {
   const ms = [msg(1, "user", []), msg(2, "meta", []), msg(3, "system", []), msg(4, "assistant", []), msg(5, "meta", [])];
   const items = streamItems(ms, false);
-  expect(items.map((i) => (i.kind === "hidden" ? `hidden:${i.count}` : `m${i.message.id}`))).toEqual(["m1", "hidden:2", "m4", "hidden:1"]);
+  expect(items.map((i) => (i.kind === "hidden" ? `hidden:${i.count}` : `m${itemMessageId(i)}`))).toEqual(["m1", "hidden:2", "m4", "hidden:1"]);
   expect(streamItems(ms, true)).toHaveLength(5);
 });
 
@@ -45,7 +47,7 @@ test("stream: thinking collapsed, chips expand, big results truncated, divider s
   const resultBlock = block("tool_result", { tool_call_id: 1, text: "x".repeat(70000) });
   const ms = [
     msg(1, "assistant", [block("thinking", { text: "List first." }), useBlock]),
-    msg(2, "user", [resultBlock]),
+    msg(2, "tool", [resultBlock]),
     msg(3, "meta", [block("other", { payload: { type: "mode" } })]),
     msg(4, "meta", []),
   ];
@@ -58,7 +60,8 @@ test("stream: thinking collapsed, chips expand, big results truncated, divider s
   expect(chip).toHaveAttribute("aria-expanded", "false");
   await userEvent.click(chip);
   expect(screen.getByRole("button", { name: /show all/i })).toBeInTheDocument();
-  expect(screen.getByText(/result of Bash/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Raw record of the Bash result" })).toBeInTheDocument();
+  expect(screen.queryByText(/result of Bash/)).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "2 meta records hidden" }));
   expect(onShowMeta).toHaveBeenCalled();
 });

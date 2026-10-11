@@ -1,4 +1,5 @@
 .session-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.session-main { min-width: 0; width: 100%; max-width: 100ch; margin-inline: auto; }
 .session-layout.with-drawer { grid-template-columns: minmax(0, 1fr) minmax(360px, 40%); }
 .session-header h1 { margin: 0 0 8px; font-size: 18px; }
 dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 8px; }
@@ -34,3 +35,16 @@ dl.kv dd { margin: 0; word-break: break-all; }
 .tabs [role="tab"][aria-selected="true"] { font-weight: 700; border-bottom: 2px solid var(--accent); }
 .drawer-body { padding: 12px; }
 .annotation-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.turn-block { position: relative; margin: 4px 0; }
+.turn-block > .raw-ref { float: right; margin-left: 6px; }
+.raw-ref { font-size: 11px; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--muted); cursor: pointer; padding: 0 4px; }
+.raw-ref:hover, .raw-ref.on { border-color: var(--border); color: var(--fg); }
+.thinking-redacted { font-size: 11px; background: none; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); cursor: pointer; padding: 0 6px; }
+.msg-command code { font-size: 12.5px; }
+.msg-injected { background: var(--meta-bg); }
+.msg-injected summary { cursor: pointer; color: var(--muted); }
+.msg-tool { background: var(--meta-bg); }
+.paste { margin: 4px 0; }
+.paste summary { cursor: pointer; }
+.chip-body h4 { margin: 6px 0 2px; font-size: 12px; }
+.anchor { display: block; height: 0; }

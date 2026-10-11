@@ -2,9 +2,28 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { AnomalyQuery } from "../api/types";
+import type { AnomalyQuery, AnomalyRow } from "../api/types";
 import { ErrorBox, Loading } from "../components/Status";
 import { RawPeek } from "./RawPeek";
+
+const RANK = { info: 0, warning: 1, error: 2 } as const;
+
+export interface AnomalyGroup { key: string; kind: string; message: string; severity: AnomalyRow["severity"]; rows: AnomalyRow[] }
+
+/** One group per (kind, message), in order of first occurrence; its severity is the worst of its rows. */
+export function groupAnomalies(rows: AnomalyRow[]): AnomalyGroup[] {
+  const groups = new Map<string, AnomalyGroup>();
+  for (const a of rows) {
+    const key = `${a.kind}\u0000${a.message}`;
+    const g = groups.get(key);
+    if (!g) groups.set(key, { key, kind: a.kind, message: a.message, severity: a.severity, rows: [a] });
+    else {
+      g.rows.push(a);
+      if (RANK[a.severity] > RANK[g.severity]) g.severity = a.severity;
+    }
+  }
+  return [...groups.values()];
+}
 
 export function AnomalyTable() {
   const [params, setParams] = useSearchParams();
@@ -23,6 +42,28 @@ export function AnomalyTable() {
     setParams(next, { replace: true });
   };
   const kinds = [...new Set((all.data ?? []).map((a) => a.kind))].sort();
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (k: string) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    return next;
+  });
+  const occurrence = (a: AnomalyRow) => [
+    <tr key={a.id}>
+      <td><span className={`badge badge-${a.severity}`}>{a.severity}</span></td>
+      <td className="mono">{a.kind}</td>
+      <td>{a.message}</td>
+      <td className="mono">
+        {a.source_file_id !== null && `file ${a.source_file_id}`}{a.byte_offset !== null && ` @${a.byte_offset}`}{" "}
+        {a.session_id !== null && <Link to={`/sessions/${a.session_id}`}>session {a.session_id}</Link>}
+      </td>
+      <td>{a.provenance_id !== null && <button type="button" onClick={() => setPeek(peek === a.id ? null : a.id)}>raw bytes</button>}</td>
+    </tr>,
+    peek === a.id && a.provenance_id !== null ? (
+      <tr key={`${a.id}-raw`}><td colSpan={5}><RawPeek provenanceId={a.provenance_id} baseOffset={a.byte_offset ?? 0} /></td></tr>
+    ) : null,
+  ];
   return (
     <section>
       <h2>Anomalies</h2>
@@ -44,21 +85,24 @@ export function AnomalyTable() {
         <table className="grid" aria-label="Anomalies">
           <thead><tr><th>Severity</th><th>Kind</th><th>Message</th><th>Where</th><th /></tr></thead>
           <tbody>
-            {q.data.map((a) => [
-              <tr key={a.id}>
-                <td><span className={`badge badge-${a.severity}`}>{a.severity}</span></td>
-                <td className="mono">{a.kind}</td>
-                <td>{a.message}</td>
-                <td className="mono">
-                  {a.source_file_id !== null && `file ${a.source_file_id}`}{a.byte_offset !== null && ` @${a.byte_offset}`}{" "}
-                  {a.session_id !== null && <Link to={`/sessions/${a.session_id}`}>session {a.session_id}</Link>}
-                </td>
-                <td>{a.provenance_id !== null && <button type="button" onClick={() => setPeek(peek === a.id ? null : a.id)}>raw bytes</button>}</td>
-              </tr>,
-              peek === a.id && a.provenance_id !== null ? (
-                <tr key={`${a.id}-raw`}><td colSpan={5}><RawPeek provenanceId={a.provenance_id} baseOffset={a.byte_offset ?? 0} /></td></tr>
-              ) : null,
-            ])}
+            {groupAnomalies(q.data).map((g) => {
+              if (g.rows.length === 1) return occurrence(g.rows[0]);
+              const isOpen = open.has(g.key);
+              return [
+                <tr key={g.key} className="anomaly-group">
+                  <td><span className={`badge badge-${g.severity}`}>{g.severity}</span></td>
+                  <td className="mono">{g.kind}</td>
+                  <td>{g.message}</td>
+                  <td>
+                    <button type="button" aria-expanded={isOpen} onClick={() => toggle(g.key)}>
+                      {isOpen ? "hide" : "show"} {g.rows.length} occurrences
+                    </button>
+                  </td>
+                  <td />
+                </tr>,
+                ...(isOpen ? g.rows.map(occurrence) : []),
+              ];
+            })}
           </tbody>
         </table>
       )}
