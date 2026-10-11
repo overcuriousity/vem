@@ -6,13 +6,15 @@ const STATUS_LABEL: Record<string, string> = {
   parsed: "parsed", unparsed: "not parsed (no parser for them)", inventoried: "inventoried only", failed: "failed", superseded: "superseded",
 };
 
-/** `files: 692 (266 parsed · 423 not parsed …) · records: 3091`: every count says what it counts. */
+/** `files: 1088, 68 in the stores above and 1020 elsewhere in the root (57 parsed · …) · records parsed: 5000`: every count says what it counts. */
 export function ingestLine(ingest: IngestStatus): string {
   if (ingest.files === 0) return "not ingested";
   const order = Object.keys(STATUS_LABEL);
   const rank = (k: string) => (order.includes(k) ? order.indexOf(k) : order.length);
   const parts = Object.entries(ingest.counts).sort(([a], [b]) => rank(a) - rank(b)).map(([k, v]) => `${v} ${STATUS_LABEL[k] ?? k}`);
-  return `files: ${ingest.files} (${parts.join(" · ")}) · records parsed: ${ingest.records}`;
+  const elsewhere = ingest.files - ingest.files_in_stores;
+  const where = elsewhere > 0 ? `, ${ingest.files_in_stores} in the stores above and ${elsewhere} elsewhere in the root` : "";
+  return `files: ${ingest.files}${where} (${parts.join(" · ")}) · records parsed: ${ingest.records}`;
 }
 
 export function RootCard({ overview }: { overview: RootOverview }) {

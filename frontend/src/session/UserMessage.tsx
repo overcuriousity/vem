@@ -34,13 +34,12 @@ export function injectedLabel(m: MessageRow, text: string): string {
 /** Prompt text split into its own words and `<pasted_content>` sections, which are drawn as collapsed pastes. */
 export function splitPastes(text: string): { paste: boolean; text: string }[] {
   const out: { paste: boolean; text: string }[] = [];
-  const re = /<pasted_content[^>]*>([\s\S]*?)(?:<\/pasted_content>|$)/g;
+  const re = /<pasted_content[^>]*>([\s\S]*?)<\/pasted_content>/g;
   let at = 0;
   for (let m = re.exec(text); m; m = re.exec(text)) {
     if (m.index > at) out.push({ paste: false, text: text.slice(at, m.index) });
     out.push({ paste: true, text: m[1].replace(/^\n/, "") });
     at = re.lastIndex;
-    if (m[0].length === 0) break;
   }
   if (at < text.length) out.push({ paste: false, text: text.slice(at) });
   return out;

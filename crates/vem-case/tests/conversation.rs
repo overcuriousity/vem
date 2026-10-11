@@ -142,5 +142,9 @@ fn bookkeeping_record_types_are_known_and_counts_are_labelled() {
     }
     let ov = &root_overviews(&case).unwrap()[0];
     assert_eq!(ov.ingest.files, ov.ingest.counts.values().sum::<i64>());
+    assert_eq!(
+        ov.ingest.files_in_stores,
+        ov.stores.iter().map(|s| s.file_count).sum::<i64>()
+    );
     assert_eq!(ov.ingest.records, msgs.len() as i64);
 }

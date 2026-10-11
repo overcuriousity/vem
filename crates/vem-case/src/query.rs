@@ -142,6 +142,8 @@ pub struct IngestStatus {
     /// Files (every version) per `parse_status`; they sum to `files`.
     pub counts: BTreeMap<String, i64>,
     pub files: i64,
+    /// Files that belong to a store; the rest lie elsewhere in the root. Equals the sum of the stores' `file_count`.
+    pub files_in_stores: i64,
     /// Records parsed out of the `parsed` files.
     pub records: i64,
     pub failed: Vec<FailedFile>,
@@ -162,6 +164,11 @@ pub fn ingest_status(case: &Case, root_id: i64) -> Result<IngestStatus, CaseErro
         counts.insert(k, v);
     }
     let files = counts.values().sum();
+    let files_in_stores: i64 = case.conn.query_row(
+        "SELECT COUNT(*) FROM source_files WHERE root_id = ?1 AND store_id IS NOT NULL",
+        [root_id],
+        |r| r.get(0),
+    )?;
     let records: i64 = case.conn.query_row(
         "SELECT COALESCE(SUM(record_count), 0) FROM source_files WHERE root_id = ?1 AND parse_status = 'parsed'",
         [root_id],
@@ -184,6 +191,7 @@ pub fn ingest_status(case: &Case, root_id: i64) -> Result<IngestStatus, CaseErro
     Ok(IngestStatus {
         counts,
         files,
+        files_in_stores,
         records,
         failed,
         last_ingest,
@@ -558,7 +566,7 @@ pub fn content_class(role: &str, attributes: &Value, blocks: &[BlockRow]) -> &'s
         "command_output"
     } else if flag("isMeta") || flag("isCompactSummary") || t.starts_with("<system-reminder>") {
         "injected"
-    } else if t.contains("<pasted_content") {
+    } else if t.contains("<pasted_content") && t.contains("</pasted_content>") {
         "paste"
     } else {
         "prompt"

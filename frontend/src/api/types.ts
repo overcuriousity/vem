@@ -14,7 +14,7 @@ export interface RootRow { id: number; path: string; label: string; host: string
 export interface StoreRow { id: number; root_id: number; kind: string; generation: string | null; rel_path: string; discovery_method: string; status: string; file_count: number }
 export interface AuditRow { id: number; ts: string; action: string; target: string | null; details: unknown }
 export interface FailedFile { id: number; rel_path: string; parse_error: string | null }
-export interface IngestStatus { counts: Record<string, number>; files: number; records: number; failed: FailedFile[]; last_ingest: AuditRow | null }
+export interface IngestStatus { counts: Record<string, number>; files: number; files_in_stores: number; records: number; failed: FailedFile[]; last_ingest: AuditRow | null }
 export interface RootOverview { root: RootRow; identification: string[]; stores: StoreRow[]; absent: string[]; ingest: IngestStatus }
 
 export interface SourceFileRow {

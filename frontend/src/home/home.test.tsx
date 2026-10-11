@@ -44,7 +44,7 @@ const overview: RootOverview = {
   identification: ["history.jsonl carrying display and sessionId"],
   stores: [{ id: 1, root_id: 1, kind: "claude:projects", generation: "2.1.294", rel_path: "projects", discovery_method: "signature", status: "parsed", file_count: 6 }],
   absent: ["claude:todos"],
-  ingest: { counts: { parsed: 6, failed: 1 }, files: 7, records: 31, failed: [{ id: 9, rel_path: "projects/x.jsonl", parse_error: "io error" }], last_ingest: null },
+  ingest: { counts: { parsed: 6, failed: 1 }, files: 7, files_in_stores: 7, records: 31, failed: [{ id: 9, rel_path: "projects/x.jsonl", parse_error: "io error" }], last_ingest: null },
 };
 
 test("case home shows roots, absent stores, ingest status and filters anomalies via the URL", async () => {
@@ -96,7 +96,7 @@ test("the anomaly table shows one row per group and expands to its occurrences",
 });
 
 test("ingest line labels files and records", () => {
-  expect(ingestLine({ counts: { parsed: 2, unparsed: 5, inventoried: 1 }, files: 8, records: 40, failed: [], last_ingest: null }))
-    .toBe("files: 8 (2 parsed · 5 not parsed (no parser for them) · 1 inventoried only) · records parsed: 40");
-  expect(ingestLine({ counts: {}, files: 0, records: 0, failed: [], last_ingest: null })).toBe("not ingested");
+  expect(ingestLine({ counts: { parsed: 2, unparsed: 5, inventoried: 1 }, files: 8, files_in_stores: 3, records: 40, failed: [], last_ingest: null }))
+    .toBe("files: 8, 3 in the stores above and 5 elsewhere in the root (2 parsed · 5 not parsed (no parser for them) · 1 inventoried only) · records parsed: 40");
+  expect(ingestLine({ counts: {}, files: 0, files_in_stores: 0, records: 0, failed: [], last_ingest: null })).toBe("not ingested");
 });

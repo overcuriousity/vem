@@ -124,4 +124,6 @@ test("command lines and paste splitting", () => {
     { paste: false, text: "a " }, { paste: true, text: "p" }, { paste: false, text: " b" },
   ]);
   expect(splitPastes("plain")).toEqual([{ paste: false, text: "plain" }]);
+  // A mention of the tag is not a paste.
+  expect(splitPastes("see `<pasted_content>` here")).toEqual([{ paste: false, text: "see `<pasted_content>` here" }]);
 });
