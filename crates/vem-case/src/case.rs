@@ -27,11 +27,17 @@ pub struct Case {
 
 impl Case {
     pub fn create(dir: &Path, name: &str, examiner: Option<&str>) -> Result<Case, CaseError> {
-        if dir.exists() && std::fs::read_dir(dir)?.next().is_some() {
+        let at = |path: &Path| {
+            let path = path.to_path_buf();
+            move |source| CaseError::IoAt { path, source }
+        };
+        if dir.exists() && std::fs::read_dir(dir).map_err(at(dir))?.next().is_some() {
             return Err(CaseError::AlreadyExists(dir.to_path_buf()));
         }
-        std::fs::create_dir_all(dir.join("blobs"))?;
-        std::fs::create_dir_all(dir.join("exports"))?;
+        for sub in ["blobs", "exports"] {
+            let p = dir.join(sub);
+            std::fs::create_dir_all(&p).map_err(at(&p))?;
+        }
         let conn = db::open(&dir.join("case.db"))?;
         conn.execute(
             "INSERT INTO case_info (id, name, examiner, created_at, tool_version) VALUES (1, ?1, ?2, ?3, ?4)",
