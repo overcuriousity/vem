@@ -20,7 +20,7 @@ pub enum CaseError {
     Ambiguous(String),
     #[error("no evidence root with id {0}")]
     NoSuchRoot(i64),
-    #[error("no adapter for harness {0}")]
+    #[error("harness {0} is not supported yet; this version reads claude-code only")]
     NoAdapter(String),
     #[error("export: {0}")]
     Export(String),

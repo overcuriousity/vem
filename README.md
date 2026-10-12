@@ -1,7 +1,8 @@
 # Vestigia Ex Machina
 
-Forensic analysis of the on-disk traces left by agentic AI coding harnesses
-(Claude Code, Codex CLI, Cursor). Attach a collected harness directory to a case,
+Forensic analysis of the on-disk traces left by agentic AI coding harnesses.
+Claude Code is supported today; Codex CLI and Cursor are planned but not yet
+available. Attach a collected harness directory to a case,
 ingest it, browse sessions with per-record provenance, export Timesketch and
 Vestigo timelines.
 
