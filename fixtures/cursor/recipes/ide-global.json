@@ -1,0 +1,56 @@
+{
+  "out": "ide/User/globalStorage/state.vscdb",
+  "kind": "kv",
+  "tables": {
+    "ItemTable": {
+      "cursorAuth/cachedSignUpType": "Auth_0"
+    },
+    "cursorDiskKV": {
+      "composerData:1c1c1c1c-0000-4000-8000-000000000001": {
+        "composerId": "1c1c1c1c-0000-4000-8000-000000000001",
+        "name": "list the files",
+        "createdAt": 1767225600000,
+        "fullConversationHeadersOnly": [
+          {
+            "bubbleId": "b1b1b1b1-0000-4000-8000-000000000001",
+            "type": 1
+          },
+          {
+            "bubbleId": "b1b1b1b1-0000-4000-8000-000000000002",
+            "type": 2
+          }
+        ]
+      },
+      "bubbleId:1c1c1c1c-0000-4000-8000-000000000001:b1b1b1b1-0000-4000-8000-000000000001": {
+        "bubbleId": "b1b1b1b1-0000-4000-8000-000000000001",
+        "type": 1,
+        "text": "list the files"
+      },
+      "bubbleId:1c1c1c1c-0000-4000-8000-000000000001:b1b1b1b1-0000-4000-8000-000000000002": {
+        "bubbleId": "b1b1b1b1-0000-4000-8000-000000000002",
+        "type": 2,
+        "text": "a.txt b.txt"
+      }
+    }
+  },
+  "wal_rows": {
+    "cursorDiskKV": {
+      "composerData:1c1c1c1c-0000-4000-8000-000000000002": {
+        "composerId": "1c1c1c1c-0000-4000-8000-000000000002",
+        "name": "only in wal",
+        "createdAt": 1767225700000,
+        "fullConversationHeadersOnly": [
+          {
+            "bubbleId": "b1b1b1b1-0000-4000-8000-000000000003",
+            "type": 1
+          }
+        ]
+      },
+      "bubbleId:1c1c1c1c-0000-4000-8000-000000000002:b1b1b1b1-0000-4000-8000-000000000003": {
+        "bubbleId": "b1b1b1b1-0000-4000-8000-000000000003",
+        "type": 1,
+        "text": "newest prompt"
+      }
+    }
+  }
+}

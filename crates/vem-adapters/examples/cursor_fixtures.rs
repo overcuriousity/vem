@@ -13,6 +13,8 @@
 //!   hex, `msg` is a nested field list); any other JSON as its serialized text.
 //! - `wal_rows` are written after a checkpoint with autocheckpoint off, and the db and its `-wal` are
 //!   copied out while the writer is still open, so those rows exist only in `<out>-wal`.
+//!
+//! The dbs are byte-for-byte reproducible; a `-wal` is not (SQLite puts random salts in its header).
 
 use rusqlite::{params, Connection};
 use serde_json::Value;
