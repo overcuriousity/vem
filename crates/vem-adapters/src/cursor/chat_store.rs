@@ -29,8 +29,8 @@ pub const PARSER_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Message-blob fields this parser knows; any other gets one aggregated `unknown_field`.
 const MESSAGE_FIELDS: &[&str] = &["role", "content", "id"];
 
-const LIST_META: &str = "SELECT key, octet_length(value) FROM meta ORDER BY rowid";
-const FETCH_META: &str = "SELECT value FROM meta WHERE key = ?1";
+const LIST_META: &str = "SELECT rowid, key, octet_length(value) FROM meta ORDER BY rowid";
+const FETCH_META: &str = "SELECT value FROM meta WHERE rowid = ?1";
 const LIST_BLOBS: &str = "SELECT rowid, id, octet_length(data) FROM blobs ORDER BY rowid";
 const FETCH_BLOB: &str = "SELECT data FROM blobs WHERE rowid = ?1";
 
@@ -555,15 +555,16 @@ fn read_meta(
     let keys = stmt
         .query_map([], |r| {
             Ok((
-                String::from_utf8_lossy(&bytes_of(r.get_ref(0)?)).into_owned(),
-                r.get::<_, Option<i64>>(1)?.unwrap_or(0).max(0) as u64,
+                r.get::<_, i64>(0)?,
+                String::from_utf8_lossy(&bytes_of(r.get_ref(1)?)).into_owned(),
+                r.get::<_, Option<i64>>(2)?.unwrap_or(0).max(0) as u64,
             ))
         })
         .map_err(sql)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(sql)?;
     let mut found = None;
-    for (key, len) in keys {
+    for (rowid, key, len) in keys {
         let file_anomaly = |sink: &mut dyn ParseSink, kind, severity, message: String| {
             sink.anomaly(record_anomaly(
                 ctx.handle,
@@ -585,7 +586,7 @@ fn read_meta(
             continue;
         }
         let Some(raw) = conn
-            .query_row(FETCH_META, [&key], |r| Ok(bytes_of(r.get_ref(0)?)))
+            .query_row(FETCH_META, [rowid], |r| Ok(bytes_of(r.get_ref(0)?)))
             .optional()
             .map_err(sql)?
         else {
@@ -621,6 +622,15 @@ pub fn parse_store_db(
     ctx: &FileContext<'_>,
     sink: &mut dyn ParseSink,
 ) -> Result<ParseOutcome, ParseError> {
+    parse_store_db_with_cap(ctx, sink, RECORD_CAP)
+}
+
+/// [`parse_store_db`] with a different per-record cap (tests).
+pub fn parse_store_db_with_cap(
+    ctx: &FileContext<'_>,
+    sink: &mut dyn ParseSink,
+    cap: u64,
+) -> Result<ParseOutcome, ParseError> {
     let view = open_for_parse(ctx, sink)?;
     for table in ["meta", "blobs"] {
         if !has_table(&view.conn, table) {
@@ -640,7 +650,6 @@ pub fn parse_store_db(
         }
     }
     let conn = &view.conn;
-    let cap = RECORD_CAP;
     let meta = read_meta(ctx, conn, cap, sink)?;
     let dir = ctx
         .rel_path
