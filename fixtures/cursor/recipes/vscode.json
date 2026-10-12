@@ -1,0 +1,22 @@
+[
+  {
+    "out": "vscode/User/globalStorage/state.vscdb",
+    "kind": "kv",
+    "tables": {
+      "ItemTable": {
+        "workbench.colorTheme": "Default Dark Modern"
+      }
+    }
+  },
+  {
+    "out": "vscode/User/workspaceStorage/w/state.vscdb",
+    "kind": "kv",
+    "tables": {
+      "ItemTable": {
+        "workbench.explorer.treeViewState": {
+          "expanded": []
+        }
+      }
+    }
+  }
+]

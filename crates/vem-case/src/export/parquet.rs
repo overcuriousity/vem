@@ -62,6 +62,8 @@ pub fn schema() -> Schema {
             false,
         ),
         Field::new("attributes", DataType::Map(Arc::new(entries), false), false),
+        // Set for a record that is not a byte range of the file (a SQLite row); `byte_offset` is then 0.
+        Field::new("locator", DataType::Utf8, true),
     ])
 }
 
@@ -84,6 +86,7 @@ pub fn write_parquet(events: &[Event], out: &Path) -> Result<ParquetReport, Case
     let mut file_hash = StringBuilder::new();
     let mut byte_offset = UInt64Builder::new();
     let mut content_hash = StringBuilder::new();
+    let mut locator = StringBuilder::new();
     let mut message = StringBuilder::new();
     let mut timestamp = TimestampMillisecondBuilder::new().with_timezone("UTC");
     let mut timestamp_desc = StringBuilder::new();
@@ -104,6 +107,7 @@ pub fn write_parquet(events: &[Event], out: &Path) -> Result<ParquetReport, Case
         file_hash.append_value(&e.provenance.file_sha256);
         byte_offset.append_value(e.provenance.byte_offset);
         content_hash.append_value(&e.provenance.content_sha256);
+        locator.append_option(e.provenance.locator.as_deref());
         message.append_value(&e.message);
         match e.datetime.as_deref().and_then(millis) {
             Some(ms) => timestamp.append_value(ms),
@@ -141,6 +145,7 @@ pub fn write_parquet(events: &[Event], out: &Path) -> Result<ParquetReport, Case
         Arc::new(display_name.finish()),
         Arc::new(tags.finish()),
         Arc::new(attributes.finish()),
+        Arc::new(locator.finish()),
     ];
     let original_files: Vec<serde_json::Value> = originals.into_values().collect();
     let footer: Vec<(String, String)> = vec![

@@ -30,7 +30,7 @@ str_enum!(ToolCategory { Shell = "shell", FileRead = "file_read", FileWrite = "f
 str_enum!(ObservationKind { CommandExecuted = "command_executed", FileRead = "file_read", FileWritten = "file_written", FileEdited = "file_edited", FileDeleted = "file_deleted", SubagentSpawned = "subagent_spawned", UrlReferenced = "url_referenced", SecretCandidate = "secret_candidate", PasteDetected = "paste_detected", UploadDetected = "upload_detected" });
 str_enum!(Confidence { High = "high", Medium = "medium", Low = "low" });
 str_enum!(/// `SidecarOnly`: a session known only from a sidecar (e.g. `history.jsonl`) whose transcript is gone.
-    SessionKind { Primary = "primary", Subagent = "subagent", Resumed = "resumed", Forked = "forked", SidecarOnly = "sidecar_only" });
+    SessionKind { Primary = "primary", Subagent = "subagent", Resumed = "resumed", Forked = "forked", SidecarOnly = "sidecar_only", LocalHistory = "local_history" });
 str_enum!(JoinStatus { Matched = "matched", Unmatched = "unmatched", Ambiguous = "ambiguous" });
 str_enum!(AnomalyKind {
     TruncatedLine = "truncated_line", MalformedRecord = "malformed_record", UnknownRecordType = "unknown_record_type",
@@ -39,7 +39,8 @@ str_enum!(AnomalyKind {
     FolderDateClockMismatch = "folder_date_clock_mismatch", HashDrift = "hash_drift", EmptyStore = "empty_store",
     OversizedRecord = "oversized_record", UnpairedToolResult = "unpaired_tool_result", MissingTranscript = "missing_transcript",
     SuspiciousPath = "suspicious_path", NonUtf8Path = "non_utf8_path", SymlinkInEvidence = "symlink_in_evidence", InvalidUtf8 = "invalid_utf8",
-    UnreadableFile = "unreadable_file",
+    UnreadableFile = "unreadable_file", UnknownField = "unknown_field", UnreferencedRecord = "unreferenced_record",
+    WalApplied = "wal_applied",
 });
 str_enum!(Severity { Info = "info", Warning = "warning", Error = "error" });
 str_enum!(ProvOrigin { Stored = "stored", Derived = "derived", Inferred = "inferred" });
@@ -121,6 +122,13 @@ pub struct Provenance {
     pub parser_name: String,
     pub parser_version: String,
     pub origin: ProvOrigin,
+    /// Set when the record is not a contiguous byte range of the source file (a SQLite row or blob).
+    /// The record's bytes are then the content blob `content_sha256`, `byte_offset` is 0 and
+    /// `byte_length` is the blob size. Grammar (built by the adapter): `<table>:<key>` for key-value
+    /// rows, `blobs:<id>` and `meta:<key>` for chat-store rows, with a ` +wal` suffix when the row was
+    /// read from a WAL-applied view of the db (not: the row lives in the WAL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
