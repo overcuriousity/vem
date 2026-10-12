@@ -8,7 +8,7 @@ use crate::claude_code::transcript::{
     blocks_from_content, decode_record, provenance, root_file_anomaly, str_field, unsafe_component,
 };
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -71,11 +71,64 @@ struct Pending {
     result_payload: Option<Value>,
 }
 
+/// Content blocks this parser keeps but cannot interpret, by `(type, reason)`: count, first locator,
+/// first record. A block of an unknown type is kept on its message as `other`, and a `tool_use` or
+/// `tool_result` without an id cannot be paired; either way what it carries (a tool call in an
+/// unexpected shape, say) is not parsed, so each gets one `unknown_record_type` per file.
+#[derive(Default)]
+struct BlockCensus {
+    seen: BTreeMap<(String, &'static str), (u64, String, Provenance)>,
+}
+
+impl BlockCensus {
+    fn note(&mut self, blocks: &[BlockDraft], prov: &Provenance) {
+        for (ordinal, b) in blocks.iter().enumerate() {
+            let reason = match b.kind {
+                BlockKind::Other => "unknown_type",
+                BlockKind::ToolUse | BlockKind::ToolResult if b.tool_use_id.is_none() => {
+                    "missing_id"
+                }
+                _ => continue,
+            };
+            let block_type = b
+                .payload
+                .get("type")
+                .and_then(Value::as_str)
+                .filter(|t| !t.is_empty())
+                .unwrap_or("(no type)");
+            let locator = format!("line {} block {ordinal}", prov.record_index);
+            self.seen
+                .entry((block_type.to_string(), reason))
+                .or_insert_with(|| (0, locator, prov.clone()))
+                .0 += 1;
+        }
+    }
+
+    fn finish(&mut self, file: SourceFileHandle, session: SessionHandle, sink: &mut dyn ParseSink) {
+        for ((block_type, reason), (count, first, prov)) in std::mem::take(&mut self.seen) {
+            let what = match reason {
+                "missing_id" => format!("{block_type:?} without an id were kept and not paired"),
+                _ => format!("of unknown type {block_type:?} were kept as `other` and not parsed"),
+            };
+            sink.anomaly(record_anomaly(
+                file,
+                Some(session),
+                AnomalyKind::UnknownRecordType,
+                Severity::Warning,
+                Some(&prov),
+                format!("{count} content block(s) {what}"),
+                json!({ "record_kind": "content_block", "block_type": block_type, "reason": reason, "count": count, "first_locator": first }),
+            ));
+        }
+    }
+}
+
 struct State<'a> {
     ctx: &'a FileContext<'a>,
     path: AgentTranscriptPath,
     session: SessionHandle,
     census: FieldCensus,
+    blocks: BlockCensus,
     pending: HashMap<String, Pending>,
     /// Calls in the order their `tool_use` was seen, for a stable flush.
     order: Vec<String>,
@@ -257,6 +310,7 @@ impl State<'_> {
             attributes.insert("message".into(), message);
         }
         let blocks = blocks_from_content(content.as_ref());
+        self.blocks.note(&blocks, &prov);
         let role_str = role_raw
             .as_ref()
             .and_then(Value::as_str)
@@ -354,6 +408,7 @@ pub fn parse_transcript(
         path,
         session,
         census: FieldCensus::default(),
+        blocks: BlockCensus::default(),
         pending: HashMap::new(),
         order: Vec::new(),
     };
@@ -425,5 +480,6 @@ pub fn parse_transcript(
         }
     }
     st.census.finish(ctx.handle, Some(session), sink);
+    st.blocks.finish(ctx.handle, session, sink);
     Ok(ParseOutcome::Parsed { records })
 }

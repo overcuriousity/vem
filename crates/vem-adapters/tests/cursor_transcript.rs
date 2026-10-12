@@ -192,6 +192,45 @@ fn unknown_field_aggregated_once() {
 }
 
 #[test]
+fn unknown_block_types_aggregated_once_per_type() {
+    let body = [
+        r#"{"role":"user","message":{"content":[{"type":"text","text":"a"}]}}"#,
+        r#"{"role":"assistant","message":{"content":[{"type":"text","text":"b"},{"type":"tool_call","x":1}]}}"#,
+        r#"{"role":"assistant","message":{"content":[{"type":"tool_call","x":2},{"type":"widget"},{"no_type":true},"bare"]}}"#,
+        r#"{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{}}]}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    let (tmp, rel) = temp_transcript("s", &body);
+    let mut sink = VecSink::default();
+    parse_cursor(tmp.path(), &rel, &mut sink);
+    let ub: Vec<_> = sink
+        .anomalies_of(AnomalyKind::UnknownRecordType)
+        .into_iter()
+        .filter(|a| a.details["record_kind"] == "content_block")
+        .collect();
+    assert_eq!(ub.len(), 4, "{ub:?}");
+    let of = |t: &str| ub.iter().find(|a| a.details["block_type"] == t).unwrap();
+    assert_eq!(of("tool_call").details["reason"], "unknown_type");
+    let tc = of("tool_call");
+    assert_eq!(tc.details["count"], 2);
+    assert_eq!(tc.details["first_locator"], "line 1 block 1");
+    assert_eq!(tc.severity, Severity::Warning);
+    assert_eq!(tc.provenance.as_ref().unwrap().record_index, 1);
+    assert_eq!(of("widget").details["count"], 1);
+    // A block without a string `type` is counted too, never dropped from the census.
+    let untyped = of("(no type)");
+    assert_eq!(untyped.details["count"], 2);
+    assert_eq!(untyped.details["first_locator"], "line 2 block 2");
+    // A tool_use without an id cannot be paired; that is reported, not skipped silently.
+    let no_id = of("tool_use");
+    assert_eq!(no_id.details["reason"], "missing_id");
+    assert_eq!(no_id.details["first_locator"], "line 3 block 0");
+    // The blocks themselves are kept on the message as `other`.
+    assert_eq!(sink.messages[2].2.blocks.len(), 4);
+}
+
+#[test]
 fn unknown_role_is_meta() {
     let body = r#"{"role":"system","message":{"content":"x"}}"#.to_string() + "\n";
     let (tmp, rel) = temp_transcript("s", &body);
