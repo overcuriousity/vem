@@ -53,14 +53,15 @@ pub fn parse_entries(
         Some(raw) => serde_json::from_str(raw.get()).map_err(invalid)?,
         None => Vec::new(),
     };
-    let parsed: Vec<(Map<String, Value>, Provenance)> = entries
+    // A non-object entry is `None`: reported as malformed and skipped.
+    let parsed: Vec<(Option<Map<String, Value>>, Provenance)> = entries
         .iter()
         .enumerate()
         .map(|(i, raw)| {
             let span = raw.get();
             let obj = match serde_json::from_str::<Value>(span) {
-                Ok(Value::Object(o)) => o,
-                _ => Map::new(),
+                Ok(Value::Object(o)) => Some(o),
+                _ => None,
             };
             let prov = Provenance {
                 source_file: ctx.handle,
@@ -89,8 +90,12 @@ pub fn parse_entries(
         project_path: None,
         git_branch: None,
         harness_version: None,
-        first_ts: parsed.first().and_then(|(o, _)| ts(o)),
-        last_ts: parsed.last().and_then(|(o, _)| ts(o)),
+        first_ts: parsed.iter().find_map(|(o, _)| o.as_ref()).and_then(ts),
+        last_ts: parsed
+            .iter()
+            .rev()
+            .find_map(|(o, _)| o.as_ref())
+            .and_then(ts),
     });
     let anomaly =
         |sink: &mut dyn ParseSink, kind, severity, prov: &Provenance, msg: String, details| {
@@ -106,6 +111,20 @@ pub fn parse_entries(
         };
     let mut before: Option<String> = None;
     for (obj, prov) in &parsed {
+        let Some(obj) = obj else {
+            anomaly(
+                sink,
+                AnomalyKind::MalformedRecord,
+                Severity::Error,
+                prov,
+                format!(
+                    "local-history entry {} of {d} is not an object; skipped",
+                    prov.record_index
+                ),
+                json!({ "history": d, "index": prov.record_index }),
+            );
+            continue;
+        };
         let id = obj.get("id").and_then(Value::as_str).unwrap_or_default();
         let source = obj.get("source").cloned().unwrap_or(Value::Null);
         let timestamp = ts(obj).unwrap_or_else(Timestamp::absent);

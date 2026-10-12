@@ -192,6 +192,32 @@ fn history_id_traversal_is_suspicious() {
 }
 
 #[test]
+fn history_non_object_entry_malformed() {
+    let tmp = with_entries(json!([
+        {"id": "s1.ts", "timestamp": 1767225600000u64},
+        42,
+        {"id": "s2.ts", "timestamp": 1767225660000u64}
+    ]));
+    let h1 = tmp.path().join("User/History/h1");
+    std::fs::write(h1.join("s1.ts"), "one").unwrap();
+    std::fs::write(h1.join("s2.ts"), "two").unwrap();
+    let mut sink = VecSink::default();
+    parse_ide(tmp.path(), ENTRIES, 3, &mut sink);
+    assert!(sink.anomalies_of(AnomalyKind::SuspiciousPath).is_empty());
+    let bad = sink.anomalies_of(AnomalyKind::MalformedRecord);
+    assert_eq!(bad.len(), 1, "{bad:?}");
+    assert_eq!(bad[0].severity, Severity::Error);
+    assert_eq!(bad[0].provenance.as_ref().unwrap().record_index, 1);
+    assert_eq!(bad[0].details, json!({"history": "h1", "index": 1}));
+    // Skipped: no record, no observation, and the chain runs s1 -> s2.
+    assert_eq!(sink.messages.len(), 2);
+    let obs = sink.observations_of(ObservationKind::FileWritten);
+    assert_eq!(obs.len(), 2);
+    assert_eq!(obs[1].before_blob, obs[0].after_blob);
+    assert_eq!(sink.blobs[obs[1].after_blob.as_ref().unwrap()], b"two");
+}
+
+#[test]
 fn history_missing_snapshot_file_anomaly() {
     let tmp = with_entries(json!([
         {"id": "AbCd.ts", "timestamp": 1767225600000u64},
