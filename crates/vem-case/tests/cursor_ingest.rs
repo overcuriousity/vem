@@ -5,7 +5,6 @@ mod common;
 
 use common::copy_dir;
 use std::collections::BTreeMap;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use vem_case::evidence::{attach, AttachOptions};
 use vem_case::export::{events, Scope};
@@ -157,8 +156,20 @@ fn ambiguous_when_two_candidates() {
     assert!(t1_claims(&case).iter().all(|c| c.2 == "ambiguous"));
 }
 
-/// rel path -> (size, mtime ns, ctime ns, sha256) of every regular file under `root`.
-fn snapshot(root: &Path) -> BTreeMap<String, (u64, i128, i128, String)> {
+/// Inode change time in ns (any metadata write moves it); `0` where the platform has none.
+#[cfg(unix)]
+fn ctime_ns(m: &std::fs::Metadata) -> i128 {
+    use std::os::unix::fs::MetadataExt;
+    i128::from(m.ctime()) * 1_000_000_000 + i128::from(m.ctime_nsec())
+}
+
+#[cfg(not(unix))]
+fn ctime_ns(_: &std::fs::Metadata) -> i128 {
+    0
+}
+
+/// rel path (with `/`) -> (size, mtime ns, ctime ns, sha256) of every regular file under `root`.
+fn snapshot(root: &Path) -> BTreeMap<String, (u64, u128, i128, String)> {
     walkdir::WalkDir::new(root)
         .sort_by_file_name()
         .into_iter()
@@ -166,17 +177,22 @@ fn snapshot(root: &Path) -> BTreeMap<String, (u64, i128, i128, String)> {
         .filter(|e| e.file_type().is_file())
         .map(|e| {
             let m = e.metadata().unwrap();
-            let ns = |s: i64, n: i64| i128::from(s) * 1_000_000_000 + i128::from(n);
+            let mtime = m
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             (
                 e.path()
                     .strip_prefix(root)
                     .unwrap()
                     .to_string_lossy()
-                    .into_owned(),
+                    .replace('\\', "/"),
                 (
                     m.len(),
-                    ns(m.mtime(), m.mtime_nsec()),
-                    ns(m.ctime(), m.ctime_nsec()),
+                    mtime,
+                    ctime_ns(&m),
                     sha256_file(e.path()).unwrap().0,
                 ),
             )
