@@ -24,8 +24,14 @@ pub const RECORD_CAP: u64 = 64 * 1024 * 1024;
 /// The immutable read-only URI of `path`: every byte outside `[A-Za-z0-9/._~-]` is percent-encoded, so
 /// `?`, `#`, `%` and non-UTF-8 bytes in a path cannot change the URI's meaning.
 pub fn sqlite_uri(path: &Path) -> String {
-    let mut out = String::from("file:");
-    for &b in path_bytes(path).iter() {
+    let bytes = path_bytes(path);
+    // A path starting `//` (a UNC share) gets an empty authority, so its host is not read as one.
+    let mut out = String::from(if bytes.starts_with(b"//") {
+        "file://"
+    } else {
+        "file:"
+    });
+    for &b in bytes.iter() {
         if b.is_ascii_alphanumeric() || b"/._~-".contains(&b) {
             out.push(b as char);
         } else {
@@ -44,7 +50,21 @@ fn path_bytes(path: &Path) -> Vec<u8> {
 
 #[cfg(not(unix))]
 fn path_bytes(path: &Path) -> Vec<u8> {
-    path.to_string_lossy().replace('\\', "/").into_bytes()
+    windows_uri_path(&path.to_string_lossy()).into_bytes()
+}
+
+/// A Windows path in URI form: `/` separators, and the verbatim prefix of a canonicalized path dropped
+/// (`\\?\C:\x` is `C:/x`, `\\?\UNC\srv\share` is `//srv/share`); otherwise `//?/` would read as a
+/// URI authority.
+pub fn windows_uri_path(path: &str) -> String {
+    let s = path.replace('\\', "/");
+    if let Some(unc) = s.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else if let Some(p) = s.strip_prefix("//?/") {
+        p.to_string()
+    } else {
+        s
+    }
 }
 
 fn invalid(e: impl std::fmt::Display) -> ParseError {

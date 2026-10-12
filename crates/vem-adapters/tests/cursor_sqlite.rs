@@ -226,6 +226,26 @@ fn sqlite_uri_escapes() {
     );
 }
 
+#[test]
+fn windows_paths_lose_the_verbatim_prefix() {
+    assert_eq!(windows_uri_path(r"\\?\C:\a b\x.db"), "C:/a b/x.db");
+    assert_eq!(windows_uri_path(r"C:\x.db"), "C:/x.db");
+    assert_eq!(
+        windows_uri_path(r"\\?\UNC\srv\share\x.db"),
+        "//srv/share/x.db"
+    );
+    assert_eq!(windows_uri_path(r"\\srv\share\x.db"), "//srv/share/x.db");
+}
+
+#[cfg(unix)]
+#[test]
+fn sqlite_uri_unc_like_path_has_empty_authority() {
+    assert_eq!(
+        sqlite_uri(Path::new("//srv/share/x.db")),
+        "file:////srv/share/x.db?mode=ro&immutable=1"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn sqlite_uri_escapes_non_utf8() {

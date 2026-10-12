@@ -151,7 +151,7 @@ fn transcripts_outside_agent_transcripts_are_not_listed() {
     assert!(d.stores[0]
         .files
         .iter()
-        .all(|f| f.to_string_lossy().contains("/agent-transcripts/")));
+        .all(|f| f.components().any(|c| c.as_os_str() == "agent-transcripts")));
 }
 
 #[test]
