@@ -5,6 +5,7 @@ mod cursor_common;
 use cursor_common::*;
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
+use vem_adapters::cursor::chat_store::parse_store_db_with_cap;
 use vem_adapters::cursor::CursorAdapter;
 use vem_core::adapter::ParseOutcome;
 use vem_core::model::*;
@@ -339,4 +340,43 @@ fn missing_blobs_table_is_unknown_generation() {
         1
     );
     assert!(sink.sessions.is_empty());
+}
+
+#[test]
+fn duplicate_meta_key_respects_cap() {
+    // Hostile evidence: `meta.key` is not unique. The first row is over the cap, the second is not;
+    // the second row must be fetched by its own rowid, never by key (which returns the first).
+    let tmp = tempfile::tempdir().unwrap();
+    let rel = "chats/ws/dir-dup/store.db";
+    let path = tmp.path().join(rel);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE meta (key TEXT, value TEXT); CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB);",
+    )
+    .unwrap();
+    let big = format!("{}{}", meta_hex("big-agent", &id(1)), "00".repeat(400));
+    let small = meta_hex("small-agent", &id(1));
+    let cap = 400u64;
+    assert!(big.len() as u64 > cap && (small.len() as u64) <= cap);
+    conn.execute("INSERT INTO meta VALUES ('0', ?1)", [&big])
+        .unwrap();
+    conn.execute("INSERT INTO meta VALUES ('0', ?1)", [&small])
+        .unwrap();
+    drop(conn);
+    let mut sink = VecSink {
+        live_root: Some(tmp.path().to_path_buf()),
+        ..Default::default()
+    };
+    let out = with_ctx(&CursorAdapter, tmp.path(), rel, 1, |ctx| {
+        parse_store_db_with_cap(ctx, &mut sink, cap).unwrap()
+    });
+    assert!(matches!(out, ParseOutcome::Parsed { .. }));
+    let big_rows = sink.anomalies_of(AnomalyKind::OversizedRecord);
+    assert_eq!(big_rows.len(), 1);
+    assert_eq!(big_rows[0].details["length"], json!(big.len()));
+    // The session comes from the small row; the big value was never fetched.
+    assert_eq!(sink.sessions[0].1.harness_session_id, "small-agent");
+    assert!(sink.find_session("big-agent").is_none());
+    assert!(sink.anomalies_of(AnomalyKind::MalformedRecord).is_empty());
 }
