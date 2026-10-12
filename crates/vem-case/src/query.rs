@@ -518,13 +518,17 @@ fn message_row(r: &Row<'_>) -> rusqlite::Result<MessageRow> {
 }
 
 /// The `turn_key` of a record: its API `message.id` and `requestId`, whichever are present.
-/// An adapter that has no API message id sets `vem_turn` instead; it wins when present.
+/// An adapter that has no API message id sets `vem_turn` instead; it wins when present, and it also
+/// keys the adapter's `tool` records into the turn of the call they answer.
 pub fn turn_key(role: &str, attributes: &Value) -> Option<String> {
-    if role != "assistant" {
+    if role != "assistant" && role != "tool" {
         return None;
     }
     if let Some(t) = attributes.get("vem_turn").and_then(Value::as_str) {
         return Some(t.to_string());
+    }
+    if role != "assistant" {
+        return None;
     }
     let id = attributes
         .get("message")
