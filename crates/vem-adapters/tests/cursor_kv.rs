@@ -241,6 +241,69 @@ fn unreferenced_bubble_kept() {
 }
 
 #[test]
+fn unreferenced_user_bubble_does_not_start_turn() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("User/globalStorage");
+    std::fs::create_dir_all(&dir).unwrap();
+    let conn = Connection::open(dir.join("state.vscdb")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);
+         CREATE TABLE cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);",
+    )
+    .unwrap();
+    let rows = [
+        (
+            format!("composerData:{C3}"),
+            json!({"_v": 3, "composerId": C3, "createdAt": 1767225600000u64,
+                   "fullConversationHeadersOnly": [{"bubbleId": "a0", "type": 1}, {"bubbleId": "a1", "type": 2}]}),
+        ),
+        (
+            format!("bubbleId:{C3}:a0"),
+            json!({"type": 1, "text": "listed prompt"}),
+        ),
+        (
+            format!("bubbleId:{C3}:a1"),
+            json!({"type": 2, "text": "listed reply"}),
+        ),
+        // Not in the header: a deleted user prompt, then a deleted assistant reply with a tool call.
+        (
+            format!("bubbleId:{C3}:x1"),
+            json!({"type": 1, "text": "deleted prompt"}),
+        ),
+        (
+            format!("bubbleId:{C3}:x2"),
+            json!({"type": 2, "text": "deleted reply",
+                   "toolFormerData": {"name": "run_terminal_cmd", "toolCallId": "call_x", "status": "completed",
+                                      "rawArgs": "{\"command\":\"ls\"}", "result": "a.txt"}}),
+        ),
+    ];
+    for (k, v) in rows {
+        conn.execute(
+            "INSERT INTO cursorDiskKV VALUES (?1, ?2)",
+            (k, v.to_string()),
+        )
+        .unwrap();
+    }
+    drop(conn);
+    let mut sink = VecSink::default();
+    parse_ide(tmp.path(), DB, 1, &mut sink);
+    let s = session(&sink, C3);
+    let turn = format!("{C3}:0");
+    let msgs = sink.msgs(s);
+    let x2 = msgs
+        .iter()
+        .find(|m| m.harness_uuid.as_deref() == Some("x2") && m.harness_record_type == "bubble")
+        .expect("unreferenced assistant bubble kept");
+    assert_eq!(x2.attributes["vem_turn"], turn);
+    let tool = msgs
+        .iter()
+        .find(|m| m.role == Role::Tool)
+        .expect("tool message");
+    assert_eq!(tool.attributes["vem_turn"], turn);
+    assert_eq!(sink.anomalies_of(AnomalyKind::UnreferencedRecord).len(), 2);
+}
+
+#[test]
 fn header_without_bubble_reported() {
     let (sink, _) = global();
     let s = session(&sink, C1);

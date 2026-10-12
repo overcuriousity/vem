@@ -389,7 +389,9 @@ impl Kv<'_> {
                         self.wal_suffix
                     ));
                     match v {
-                        Value::Object(o) => self.bubble(session, &b, o, &prov, &mut turn, sink),
+                        Value::Object(o) => {
+                            self.bubble(session, &b, o, &prov, false, &mut turn, sink)
+                        }
                         _ => self.anomaly(
                             sink,
                             Some(session),
@@ -453,18 +455,21 @@ impl Kv<'_> {
             );
         }
         if let Some(obj) = self.object(&bytes, &format!("bubble {b}"), Some(session), &prov, sink) {
-            self.bubble(session, b, obj, &prov, turn, sink);
+            self.bubble(session, b, obj, &prov, unreferenced, turn, sink);
         }
         Ok(())
     }
 
     /// One bubble object: a message, plus a `tool` message and a tool call for `toolFormerData`.
+    /// An `unreferenced` bubble never starts a turn: it continues the last listed one.
+    #[allow(clippy::too_many_arguments)]
     fn bubble(
         &mut self,
         session: SessionHandle,
         b: &str,
         obj: Map<String, Value>,
         prov: &Provenance,
+        unreferenced: bool,
         turn: &mut Turn,
         sink: &mut dyn ParseSink,
     ) {
@@ -551,7 +556,7 @@ impl Kv<'_> {
                 });
             }
         }
-        if role == Role::User {
+        if role == Role::User && !unreferenced {
             turn.current = format!("{}:{}", turn.composer, turn.ordinal);
         }
         turn.ordinal += 1;
