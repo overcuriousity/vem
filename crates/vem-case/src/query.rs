@@ -518,9 +518,13 @@ fn message_row(r: &Row<'_>) -> rusqlite::Result<MessageRow> {
 }
 
 /// The `turn_key` of a record: its API `message.id` and `requestId`, whichever are present.
+/// An adapter that has no API message id sets `vem_turn` instead; it wins when present.
 pub fn turn_key(role: &str, attributes: &Value) -> Option<String> {
     if role != "assistant" {
         return None;
+    }
+    if let Some(t) = attributes.get("vem_turn").and_then(Value::as_str) {
+        return Some(t.to_string());
     }
     let id = attributes
         .get("message")
@@ -534,7 +538,8 @@ pub fn turn_key(role: &str, attributes: &Value) -> Option<String> {
 }
 
 /// The `content_class` of a record. User records are classified by the harness markup at the start of
-/// their text and by the `isMeta` / `isCompactSummary` flags the harness sets on what it injects.
+/// their text and by the `isMeta` / `isCompactSummary` flags the harness sets on what it injects. An
+/// adapter-set `vem_content_class` from the fixed set below overrides the heuristic.
 pub fn content_class(role: &str, attributes: &Value, blocks: &[BlockRow]) -> &'static str {
     match role {
         "user" => {}
@@ -542,6 +547,21 @@ pub fn content_class(role: &str, attributes: &Value, blocks: &[BlockRow]) -> &'s
         "tool" => return "tool_result",
         "meta" => return "meta",
         _ => return "system",
+    }
+    const ADAPTER_CLASSES: [&str; 6] = [
+        "prompt",
+        "injected",
+        "command",
+        "command_output",
+        "caveat",
+        "paste",
+    ];
+    if let Some(c) = attributes
+        .get("vem_content_class")
+        .and_then(Value::as_str)
+        .and_then(|c| ADAPTER_CLASSES.iter().find(|k| **k == c))
+    {
+        return c;
     }
     let text: String = blocks
         .iter()
@@ -944,24 +964,39 @@ pub struct ProvenanceRow {
     pub parser_name: String,
     pub parser_version: String,
     pub origin: String,
+    /// Set for a record that is not a byte range of the file (a SQLite row); its bytes are the blob
+    /// `content_sha256`.
+    pub locator: Option<String>,
 }
 
 pub fn provenance(case: &Case, id: i64) -> Result<Option<ProvenanceRow>, CaseError> {
     Ok(case
         .conn
         .query_row(
-            "SELECT p.id, p.source_file_id, f.rel_path, f.sha256, r.path, f.retained, p.byte_offset, p.byte_length, p.record_index, p.content_sha256, p.parser_name, p.parser_version, p.origin, f.rel_path_encoded
+            "SELECT p.id, p.source_file_id, f.rel_path, f.sha256, r.path, f.retained, p.byte_offset, p.byte_length, p.record_index, p.content_sha256, p.parser_name, p.parser_version, p.origin, f.rel_path_encoded, p.locator
              FROM provenance p JOIN source_files f ON f.id = p.source_file_id JOIN evidence_roots r ON r.id = f.root_id WHERE p.id = ?1",
             [id],
-            |r| Ok(ProvenanceRow { id: r.get(0)?, source_file_id: r.get(1)?, rel_path: r.get(2)?, file_sha256: r.get(3)?, root_path: r.get(4)?, retained: r.get::<_, i64>(5)? == 1, byte_offset: r.get(6)?, byte_length: r.get(7)?, record_index: r.get(8)?, content_sha256: r.get(9)?, parser_name: r.get(10)?, parser_version: r.get(11)?, origin: r.get(12)?, rel_path_encoded: r.get(13)? }),
+            |r| Ok(ProvenanceRow { id: r.get(0)?, source_file_id: r.get(1)?, rel_path: r.get(2)?, file_sha256: r.get(3)?, root_path: r.get(4)?, retained: r.get::<_, i64>(5)? == 1, byte_offset: r.get(6)?, byte_length: r.get(7)?, record_index: r.get(8)?, content_sha256: r.get(9)?, parser_name: r.get(10)?, parser_version: r.get(11)?, origin: r.get(12)?, rel_path_encoded: r.get(13)?, locator: r.get(14)? }),
         )
         .optional()?)
 }
 
-/// The exact bytes a provenance row points at, from the retained copy when there is one.
+/// The exact bytes a provenance row points at, from the retained copy when there is one. A located
+/// record (a SQLite row) is its content blob, read whole and verified against its hash.
 pub fn raw_record(case: &Case, provenance_id: i64) -> Result<Vec<u8>, CaseError> {
     let p = provenance(case, provenance_id)?
         .ok_or_else(|| CaseError::NotFound(format!("provenance {provenance_id}")))?;
+    if p.locator.is_some() {
+        let f = std::fs::File::open(blobs::path(&case.dir, &p.content_sha256))?;
+        let mut buf = Vec::new();
+        f.take(RAW_WINDOW_MAX * 1024).read_to_end(&mut buf)?;
+        if sha256_hex(&buf) != p.content_sha256 {
+            return Err(CaseError::IntegrityMismatch(format!(
+                "content blob of provenance {provenance_id} does not match its hash"
+            )));
+        }
+        return Ok(buf);
+    }
     let path = if p.retained {
         blobs::path(&case.dir, &p.file_sha256)
     } else {

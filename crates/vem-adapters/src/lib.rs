@@ -1,13 +1,18 @@
 //! Harness adapters. Each adapter is a pure function from evidence files to canonical drafts.
 
 pub mod claude_code;
+pub mod cursor;
 
 use std::path::Path;
 use vem_core::adapter::{HarnessAdapter, Identification};
 use vem_core::model::Harness;
 
 pub fn adapters() -> Vec<Box<dyn HarnessAdapter>> {
-    vec![Box::new(claude_code::ClaudeCodeAdapter)]
+    vec![
+        Box::new(claude_code::ClaudeCodeAdapter),
+        Box::new(cursor::CursorAdapter),
+        Box::new(cursor::CursorIdeAdapter),
+    ]
 }
 
 pub fn adapter_for(harness: Harness) -> Option<Box<dyn HarnessAdapter>> {
