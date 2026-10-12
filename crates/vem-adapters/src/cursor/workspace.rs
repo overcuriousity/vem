@@ -5,6 +5,7 @@
 
 use super::record_anomaly;
 use super::sqlite::{has_table, open_for_parse, RECORD_CAP};
+use crate::claude_code::transcript::root_file_anomaly;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -52,11 +53,40 @@ pub fn file_uri_path(uri: &str) -> String {
 }
 
 /// The workspace folder from `workspace.json` next to the db (`folder`, or `workspace` for a
-/// multi-root workspace file).
-fn folder(ctx: &FileContext<'_>, sink: &mut dyn ParseSink) -> Option<String> {
+/// multi-root workspace file). A missing file is silent; a present but unusable one is one anomaly.
+fn folder(ctx: &FileContext<'_>, workspace: &str, sink: &mut dyn ParseSink) -> Option<String> {
     let rel = ctx.rel_path.parent()?.join("workspace.json");
-    let bytes = sink.read_root_file(&rel, RECORD_CAP).ok()??;
-    let v: Value = serde_json::from_slice(&bytes).ok()?;
+    let report = |sink: &mut dyn ParseSink, kind, severity, msg: String| {
+        sink.anomaly(record_anomaly(
+            ctx.handle,
+            None,
+            kind,
+            severity,
+            None,
+            format!("workspace {workspace}: workspace.json {msg}; no project_path"),
+            json!({ "workspace": workspace }),
+        ));
+    };
+    let bytes = match sink.read_root_file(&rel, RECORD_CAP) {
+        Ok(b) => b?,
+        Err(e) => {
+            let (kind, severity, msg) = root_file_anomaly(&e);
+            report(sink, kind, severity, msg);
+            return None;
+        }
+    };
+    let v: Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            report(
+                sink,
+                AnomalyKind::MalformedRecord,
+                Severity::Warning,
+                format!("is not JSON: {e}"),
+            );
+            return None;
+        }
+    };
     ["folder", "workspace"]
         .iter()
         .find_map(|k| v.get(k).and_then(Value::as_str))
@@ -144,7 +174,7 @@ pub fn parse_workspace_file(
             return Ok(ParseOutcome::Parsed { records: 1 });
         }
     };
-    let project = folder(ctx, sink);
+    let project = folder(ctx, &workspace, sink);
     let ids = v
         .get("allComposers")
         .and_then(Value::as_array)

@@ -43,6 +43,35 @@ fn workspace_sets_project_path() {
 }
 
 #[test]
+fn workspace_json_unusable_is_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_dir(&fixture("ide"), tmp.path());
+    let wj = tmp.path().join("User/workspaceStorage/ws1/workspace.json");
+    std::fs::write(&wj, "{not json").unwrap();
+    let mut sink = VecSink::default();
+    parse_ide(tmp.path(), GLOBAL, 1, &mut sink);
+    parse_ide(tmp.path(), WS, 2, &mut sink);
+    let bad: Vec<_> = sink
+        .anomalies_of(AnomalyKind::MalformedRecord)
+        .into_iter()
+        .filter(|a| a.source_file == Some(SourceFileHandle(2)))
+        .collect();
+    assert_eq!(bad.len(), 1, "{bad:?}");
+    assert_eq!(bad[0].severity, Severity::Warning);
+    assert_eq!(bad[0].details, json!({"workspace": "ws1"}));
+    assert!(sink.updates.iter().all(|(_, u)| u.project_path.is_none()));
+    // A missing workspace.json stays silent.
+    std::fs::remove_file(&wj).unwrap();
+    let mut sink = VecSink::default();
+    parse_ide(tmp.path(), GLOBAL, 1, &mut sink);
+    let before = sink.anomalies.len();
+    parse_ide(tmp.path(), WS, 2, &mut sink);
+    assert!(sink.anomalies[before..]
+        .iter()
+        .all(|a| a.kind == AnomalyKind::MissingTranscript));
+}
+
+#[test]
 fn workspace_json_not_parsed() {
     let mut sink = VecSink::default();
     let out = parse_ide(
