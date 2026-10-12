@@ -17,14 +17,10 @@ pub enum Scope {
 pub struct EventProvenance {
     pub source_file: String,
     pub file_sha256: String,
-    /// 0 for a located record, which has no byte range in the file.
     pub byte_offset: u64,
     pub content_sha256: String,
     pub file_size: u64,
     pub file_mtime: Option<String>,
-    /// The locator of a record that is not a byte range of the file (a SQLite row).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub locator: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -103,7 +99,6 @@ struct Common {
     byte_offset: i64,
     content_sha: String,
     session_first_ts: Option<String>,
-    locator: Option<String>,
 }
 
 impl Common {
@@ -146,15 +141,11 @@ impl Common {
         put(&mut a, "ts_origin", Some(ts_origin.to_string()));
         put(&mut a, "evidence_file", Some(self.rel_path.clone()));
         put(&mut a, "evidence_file_sha256", Some(self.file_sha.clone()));
-        // A located record (a SQLite row) has no byte offset into the file: it is addressed by its locator.
-        match &self.locator {
-            Some(l) => put(&mut a, "evidence_locator", Some(l.clone())),
-            None => put(
-                &mut a,
-                "evidence_byte_offset",
-                Some(self.byte_offset.to_string()),
-            ),
-        }
+        put(
+            &mut a,
+            "evidence_byte_offset",
+            Some(self.byte_offset.to_string()),
+        );
         put(
             &mut a,
             "evidence_record_sha256",
@@ -167,13 +158,12 @@ impl Common {
             content_sha256: self.content_sha.clone(),
             file_size: self.file_size as u64,
             file_mtime: self.file_mtime.clone(),
-            locator: self.locator.clone(),
         };
         (a, prov, format!("{}:{}", self.root_label, self.rel_path))
     }
 }
 
-const COMMON_COLS: &str = "st.harness, r.label, s.id, s.harness_session_id, s.kind, s.project_path, f.rel_path, f.sha256, f.size, f.mtime, p.byte_offset, p.content_sha256, s.first_ts, p.locator";
+const COMMON_COLS: &str = "st.harness, r.label, s.id, s.harness_session_id, s.kind, s.project_path, f.rel_path, f.sha256, f.size, f.mtime, p.byte_offset, p.content_sha256, s.first_ts";
 
 fn common_from(r: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<Common> {
     Ok(Common {
@@ -190,7 +180,6 @@ fn common_from(r: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<Common>
         byte_offset: r.get(offset + 10)?,
         content_sha: r.get(offset + 11)?,
         session_first_ts: r.get(offset + 12)?,
-        locator: r.get(offset + 13)?,
     })
 }
 

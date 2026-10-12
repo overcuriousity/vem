@@ -37,9 +37,6 @@ pub struct FileContext<'a> {
     pub abs_path: PathBuf,
     pub handle: SourceFileHandle,
     pub mtime: Option<SystemTime>,
-    /// The manifest SHA-256 of the file. An adapter that cannot read a record as a byte range of a
-    /// file it has hashed (a SQLite db) checks the file against it before parsing.
-    pub sha256: &'a str,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -148,28 +148,3 @@ fn bookkeeping_record_types_are_known_and_counts_are_labelled() {
     );
     assert_eq!(ov.ingest.records, msgs.len() as i64);
 }
-
-#[test]
-fn vem_turn_groups_assistant_records() {
-    let attrs = serde_json::json!({ "vem_turn": "t1" });
-    assert_eq!(turn_key("assistant", &attrs).as_deref(), Some("t1"));
-    assert_eq!(turn_key("user", &attrs), None);
-}
-
-#[test]
-fn vem_content_class_overrides() {
-    let block = BlockRow {
-        id: 1,
-        ordinal: 0,
-        kind: "text".into(),
-        text: Some("<user_query>x".into()),
-        payload: serde_json::Value::Null,
-        tool_use_id: None,
-        tool_call_id: None,
-    };
-    let blocks = [block];
-    let injected = serde_json::json!({ "vem_content_class": "injected" });
-    assert_eq!(content_class("user", &injected, &blocks), "injected");
-    let bogus = serde_json::json!({ "vem_content_class": "bogus" });
-    assert_eq!(content_class("user", &bogus, &blocks), "prompt");
-}

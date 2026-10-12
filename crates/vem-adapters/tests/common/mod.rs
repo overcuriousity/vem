@@ -46,9 +46,6 @@ pub fn parse_file_with_handle(
         .unwrap_or_else(|| panic!("no store claims {rel}"));
     let abs_path = root.join(&rel_path);
     let mtime = std::fs::metadata(&abs_path).and_then(|m| m.modified()).ok();
-    let sha256 = vem_core::hash::sha256_file(&abs_path)
-        .map(|(s, _)| s)
-        .unwrap_or_default();
     let ctx = FileContext {
         root,
         store,
@@ -56,7 +53,6 @@ pub fn parse_file_with_handle(
         abs_path,
         handle,
         mtime,
-        sha256: &sha256,
     };
     adapter.parse_file(&ctx, sink).expect("parse ok");
 }
