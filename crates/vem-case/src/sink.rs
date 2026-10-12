@@ -75,8 +75,8 @@ impl<'a> DbSink<'a> {
         self.parsers
             .insert(format!("{}/{}", p.parser_name, p.parser_version));
         self.conn.execute(
-            "INSERT INTO provenance (source_file_id, byte_offset, byte_length, record_index, content_sha256, parser_name, parser_version, origin, locator) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![p.source_file.0, p.byte_offset as i64, p.byte_length as i64, p.record_index as i64, p.content_sha256, p.parser_name, p.parser_version, p.origin.as_str(), p.locator],
+            "INSERT INTO provenance (source_file_id, byte_offset, byte_length, record_index, content_sha256, parser_name, parser_version, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![p.source_file.0, p.byte_offset as i64, p.byte_length as i64, p.record_index as i64, p.content_sha256, p.parser_name, p.parser_version, p.origin.as_str()],
         )?;
         Ok(self.conn.last_insert_rowid())
     }

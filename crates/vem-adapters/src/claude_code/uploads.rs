@@ -84,7 +84,6 @@ pub fn parse_upload(
         parser_name: UPLOADS_PARSER_NAME.to_string(),
         parser_version: UPLOADS_PARSER_VERSION.to_string(),
         origin: ProvOrigin::Stored,
-        locator: None,
     };
     let session = match sink.find_session(session_id) {
         Some(h) => h,

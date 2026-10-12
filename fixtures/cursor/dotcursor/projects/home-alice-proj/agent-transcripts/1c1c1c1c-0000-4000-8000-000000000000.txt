@@ -1,2 +1,0 @@
-user: hello
-assistant: hi

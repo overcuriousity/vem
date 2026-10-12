@@ -58,8 +58,6 @@ enum Resolved {
         file_id: i64,
         path: PathBuf,
         mtime: Option<String>,
-        /// The manifest hash of source file `file_id`.
-        sha256: String,
     },
     /// The evidence file cannot be read and there is no retained copy.
     Unavailable(String),
@@ -86,7 +84,6 @@ fn resolve(
                 live.to_path_buf()
             },
             mtime: f.mtime.clone(),
-            sha256: f.sha256.clone(),
         }),
         Ok(_) => {
             let tx = case.conn.transaction()?;
@@ -142,7 +139,6 @@ fn resolve(
                     live.to_path_buf()
                 },
                 mtime,
-                sha256: new_sha,
             })
         }
         Err(e) => {
@@ -152,7 +148,6 @@ fn resolve(
                     file_id: f.id,
                     path: copy,
                     mtime: f.mtime.clone(),
-                    sha256: f.sha256.clone(),
                 })
             } else {
                 Ok(Resolved::Unavailable(format!(
@@ -249,14 +244,13 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     continue;
                 }
                 let rel_path = decode_rel_path(&f.rel, f.encoded);
-                let (file_id, parse_path, mtime, sha256) =
+                let (file_id, parse_path, mtime) =
                     match resolve(case, f, &root.join(&rel_path), &mut report)? {
                         Resolved::Ready {
                             file_id,
                             path,
                             mtime,
-                            sha256,
-                        } => (file_id, path, mtime, sha256),
+                        } => (file_id, path, mtime),
                         Resolved::Unavailable(err) => {
                             mark_failed(case, f.id, &err)?;
                             report.files_failed += 1;
@@ -270,7 +264,6 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     abs_path: parse_path,
                     handle: SourceFileHandle(file_id),
                     mtime: mtime.as_deref().and_then(parse_ts_to_system_time),
-                    sha256: &sha256,
                 };
                 let tx = case.conn.transaction()?;
                 let (parsed, counts, sink_error, parsers, created) = {
