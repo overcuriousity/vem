@@ -12,7 +12,7 @@ use rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use vem_core::adapter::{FileContext, ParseError};
-use vem_core::hash::{copy_and_hash, sha256_file};
+use vem_core::hash::{copy_and_hash, sha256_file, sha256_hex};
 use vem_core::model::{AnomalyDraft, AnomalyKind, Severity};
 use vem_core::sink::{ParseSink, RootFileError};
 
@@ -179,14 +179,16 @@ pub fn open_for_parse(
     let conn = harden(conn)?;
     conn.execute_batch("PRAGMA query_only = ON;")
         .map_err(invalid)?;
-    sink.anomaly(wal_anomaly(
+    let mut applied = wal_anomaly(
         ctx,
         Severity::Info,
         format!(
             "read from a WAL-applied view of this db ({} WAL bytes applied to a private copy); rows are not tagged by whether they live in the WAL",
             wal.len()
         ),
-    ));
+    );
+    applied.details["wal_sha256"] = serde_json::Value::String(sha256_hex(&wal));
+    sink.anomaly(applied);
     Ok(DbView {
         conn,
         wal_applied: true,

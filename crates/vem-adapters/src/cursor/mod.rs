@@ -2,6 +2,7 @@
 //! directory (`cursor-ide`).
 
 pub mod discover;
+pub mod kv;
 pub mod sqlite;
 pub mod tools;
 pub mod transcript;
@@ -132,9 +133,14 @@ impl HarnessAdapter for CursorIdeAdapter {
 
     fn parse_file(
         &self,
-        _ctx: &FileContext<'_>,
-        _sink: &mut dyn ParseSink,
+        ctx: &FileContext<'_>,
+        sink: &mut dyn ParseSink,
     ) -> Result<ParseOutcome, ParseError> {
-        Ok(ParseOutcome::NotParsed)
+        let name = ctx.rel_path.file_name().and_then(|n| n.to_str());
+        match ctx.store.kind.as_str() {
+            // `-wal` and `-shm` are read with the db (WAL-applied view), not on their own.
+            STORE_STATE_VSCDB if name == Some("state.vscdb") => kv::parse_state_vscdb(ctx, sink),
+            _ => Ok(ParseOutcome::NotParsed),
+        }
     }
 }

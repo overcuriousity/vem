@@ -42,6 +42,19 @@ pub fn parse_with(
     if sink.live_root.is_none() {
         sink.live_root = Some(root.to_path_buf());
     }
+    with_ctx(adapter, root, rel, handle, |ctx| {
+        adapter.parse_file(ctx, sink).expect("parse ok")
+    })
+}
+
+/// Calls `f` with the `FileContext` of `rel` in the store of `adapter`'s discovery that lists it.
+pub fn with_ctx<T>(
+    adapter: &dyn HarnessAdapter,
+    root: &Path,
+    rel: &str,
+    handle: i64,
+    f: impl FnOnce(&FileContext<'_>) -> T,
+) -> T {
     let discovery = adapter.discover(root);
     let rel_path = PathBuf::from(rel);
     let store = discovery
@@ -63,7 +76,7 @@ pub fn parse_with(
         mtime,
         sha256: &sha256,
     };
-    adapter.parse_file(&ctx, sink).expect("parse ok")
+    f(&ctx)
 }
 
 pub fn parse_cursor(root: &Path, rel: &str, sink: &mut VecSink) -> ParseOutcome {
