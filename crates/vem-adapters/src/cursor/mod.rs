@@ -1,9 +1,11 @@
 //! Cursor adapters (spec §6.3): a collected `.cursor` directory (`cursor`) and Cursor's IDE application
 //! directory (`cursor-ide`).
 
+pub mod chat_store;
 pub mod discover;
 pub mod history;
 pub mod kv;
+pub mod protowire;
 pub mod sqlite;
 pub mod tools;
 pub mod transcript;
@@ -113,6 +115,12 @@ impl HarnessAdapter for CursorAdapter {
         match ctx.store.kind.as_str() {
             // Legacy `.txt` transcripts and `agent-tools/*.txt` sidecars are inventoried, not parsed.
             STORE_AGENT_TRANSCRIPTS => transcript::parse_transcript(ctx, sink),
+            // `-wal` and `-shm` are read with the db (WAL-applied view), not on their own.
+            STORE_CHAT_STORE
+                if ctx.rel_path.file_name().and_then(|n| n.to_str()) == Some("store.db") =>
+            {
+                chat_store::parse_store_db(ctx, sink)
+            }
             _ => Ok(ParseOutcome::NotParsed),
         }
     }

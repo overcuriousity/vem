@@ -74,7 +74,7 @@ fn sql(e: rusqlite::Error) -> ParseError {
 }
 
 /// A timestamp stored as epoch milliseconds (number or digit string) or as RFC 3339.
-fn stored_ts(v: Option<&Value>) -> Option<Timestamp> {
+pub(crate) fn stored_ts(v: Option<&Value>) -> Option<Timestamp> {
     match v? {
         Value::Number(n) => n
             .as_i64()

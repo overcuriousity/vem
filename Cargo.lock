@@ -2034,6 +2034,7 @@ name = "vem-adapters"
 version = "0.3.0"
 dependencies = [
  "insta",
+ "proptest",
  "rusqlite",
  "serde_json",
  "tempfile",

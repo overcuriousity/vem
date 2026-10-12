@@ -132,7 +132,9 @@ fn discovers_cursor_stores_in_order() {
     assert_eq!(cs.generation.as_deref(), Some("store-db"));
     assert_eq!(
         cs.files,
-        vec![PathBuf::from(format!("chats/ws1/{T1}/store.db"))]
+        vec![PathBuf::from(
+            "chats/ws1/1c1c1c1c-0000-4000-8000-000000000005/store.db"
+        )]
     );
     assert!(d.stores[2..].iter().all(|s| s.generation.is_none()));
     assert_eq!(
