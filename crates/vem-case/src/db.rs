@@ -4,7 +4,7 @@ use crate::error::CaseError;
 use rusqlite::Connection;
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 pub fn open(path: &Path) -> Result<Connection, CaseError> {
     let conn = Connection::open(path)?;
@@ -28,6 +28,13 @@ pub fn migrate(conn: &Connection) -> Result<(), CaseError> {
             "BEGIN;\n{}\nPRAGMA user_version = 1;\nCOMMIT;",
             include_str!("schema.sql")
         ))?;
+    }
+    // v2: `provenance.locator` addresses a record that is not a byte range (a SQLite row); its bytes
+    // are the content blob `content_sha256`.
+    if version < 2 {
+        conn.execute_batch(
+            "BEGIN;\nALTER TABLE provenance ADD COLUMN locator TEXT;\nPRAGMA user_version = 2;\nCOMMIT;",
+        )?;
     }
     Ok(())
 }

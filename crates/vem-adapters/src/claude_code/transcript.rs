@@ -86,6 +86,7 @@ pub fn provenance(handle: SourceFileHandle, rec: &RawRecord) -> Provenance {
         parser_name: PARSER_NAME.to_string(),
         parser_version: PARSER_VERSION.to_string(),
         origin: ProvOrigin::Stored,
+        locator: None,
     }
 }
 
@@ -840,6 +841,7 @@ pub fn parse_subagent_meta(
         parser_name: META_PARSER_NAME.to_string(),
         parser_version: META_PARSER_VERSION.to_string(),
         origin: ProvOrigin::Stored,
+        locator: None,
     };
     let session = sink.find_session(&session_id);
     let anomaly = |sink: &mut dyn ParseSink, kind, severity, message: String, details: Value| {
