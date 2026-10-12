@@ -8,7 +8,7 @@ description = "Harness adapters: files in, canonical records out"
 
 [dependencies]
 vem-core = { path = "../vem-core" }
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 walkdir.workspace = true
 rusqlite.workspace = true
 tempfile.workspace = true
