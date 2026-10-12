@@ -98,6 +98,8 @@ enum EvidenceCmd {
         user: Option<String>,
         #[arg(long)]
         os: Option<String>,
+        /// Harness that produced the directory (default: auto-detect).
+        /// Only claude-code is supported today.
         #[arg(long, value_enum)]
         harness: Option<HarnessArg>,
         #[arg(long)]
@@ -109,9 +111,13 @@ enum EvidenceCmd {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum HarnessArg {
+    /// Claude Code.
     ClaudeCode,
+    /// Codex CLI (not yet supported).
     Codex,
+    /// Cursor CLI (not yet supported).
     Cursor,
+    /// Cursor IDE (not yet supported).
     CursorIde,
 }
 
