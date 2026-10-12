@@ -2,10 +2,12 @@
 //! directory (`cursor-ide`).
 
 pub mod discover;
+pub mod history;
 pub mod kv;
 pub mod sqlite;
 pub mod tools;
 pub mod transcript;
+pub mod workspace;
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -140,6 +142,8 @@ impl HarnessAdapter for CursorIdeAdapter {
         match ctx.store.kind.as_str() {
             // `-wal` and `-shm` are read with the db (WAL-applied view), not on their own.
             STORE_STATE_VSCDB if name == Some("state.vscdb") => kv::parse_state_vscdb(ctx, sink),
+            STORE_WORKSPACE_STORAGE => workspace::parse_workspace_file(ctx, sink),
+            STORE_LOCAL_HISTORY => history::parse_entries(ctx, sink),
             _ => Ok(ParseOutcome::NotParsed),
         }
     }
