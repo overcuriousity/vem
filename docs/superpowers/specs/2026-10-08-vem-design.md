@@ -119,14 +119,16 @@ Case          id, name, examiner, created_at, notes
 EvidenceRoot  id, case_id, path, label, host, user, os, harness, attached_at
 Store         id, root_id, harness {ClaudeCode|Codex|Cursor|CursorIde}, kind (string, e.g.
               claude:projects, claude:file-history, codex:sessions, codex:archived,
-              cursor:agent-transcripts, cursor:state-vscdb, cursor:chat-store,
-              cursor:ai-tracking, cursor:local-history), generation, path,
+              cursor:agent-transcripts, cursor:chat-store, cursor:acp-sessions,
+              cursor:ai-tracking, cursor:prompt-history, cursor:state-vscdb,
+              cursor:workspace-storage, cursor:local-history), generation, path,
               discovery_method, status {Parsed|Inventoried|Failed}
 SourceFile    id, store_id, rel_path, rel_path_encoded, kind {File|Symlink}, link_target?,
               size, sha256, mtime, ctime, btime?, atime?, retained_blob?,
               parse_status {Unparsed|Parsed|Inventoried|Failed|Superseded}, record_count,
               anomaly_count, ingested_at, version
-Session       id, store_id, harness_session_id, kind {Primary|Subagent|Resumed|Forked|SidecarOnly},
+Session       id, store_id, harness_session_id, kind {Primary|Subagent|Resumed|Forked|SidecarOnly|
+              LocalHistory},
               parent_session_id?, title?, project_path?, git_branch?, harness_version?,
               models (list), first_ts, first_ts_origin, last_ts, last_ts_origin,
               message_count, tool_call_count, primary_source_file_id
@@ -151,11 +153,12 @@ Anomaly       id, root_id, store_id?, source_file_id?, session_id?, kind {Trunca
               OrphanedFile|SupersededFile|ArchivedSession|UnlinkedSubagent|
               FolderDateClockMismatch|HashDrift|EmptyStore|OversizedRecord|UnpairedToolResult|
               MissingTranscript|SuspiciousPath|NonUtf8Path|SymlinkInEvidence|InvalidUtf8|
-              UnreadableFile},
+              UnreadableFile|UnknownField|UnreferencedRecord|WalApplied},
               severity {Info|Warning|Error}, byte_offset?, message, details (JSON),
               provenance_id?
 Provenance    id, source_file_id, byte_offset, byte_length, record_index,
-              content_sha256, parser_name, parser_version, origin {Stored|Derived|Inferred}
+              content_sha256, parser_name, parser_version, origin {Stored|Derived|Inferred},
+              locator?
 ContentBlob   sha256 (pk), size, bytes (content-addressed; retained files, snapshots,
               sidecars, protobuf blobs)
 Annotation    id, case_id, target_type, target_id, kind {Tag|Bookmark|Note}, value,
@@ -170,8 +173,25 @@ which is evidence of deletion. `SuspiciousPath`: a path taken from evidence data
 `NonUtf8Path`: a file name is not valid UTF-8 and is stored percent-encoded. `SymlinkInEvidence`: a
 symbolic link in the root is recorded in the manifest and never followed. `InvalidUtf8`: a record
 contains invalid UTF-8 and was decoded lossily. `UnreadableFile`: a file in the root could not be opened,
-copied or hashed during attach; it is listed, attach continues. `SidecarOnly`: a session known only from a sidecar
-(e.g. `history.jsonl` prompts) whose transcript is gone.
+copied or hashed during attach; it is listed, attach continues. `UnknownField`: a record carries a
+field the parser does not know; it is kept in `attributes`, and one anomaly per (file, record kind,
+field) aggregates the count and the first locator. `UnreferencedRecord`: a record no index lists (e.g.
+a Cursor `bubbleId` row its composer header no longer references); it is kept and shown after the
+referenced records. `WalApplied`: the SQLite file was read from a WAL-applied view (a private copy of
+the db and its `-wal`), see §6.3. `SidecarOnly`: a session known only from a sidecar
+(e.g. `history.jsonl` prompts) whose transcript is gone. `LocalHistory`: one edited file's entries in
+Cursor's `User/History/`; not attached to a chat session.
+
+`Provenance.locator` (case schema v2): set when the record is not a contiguous byte range of its file,
+e.g. a SQLite row (`cursorDiskKV:<key>`) or a blob in a chat store. The record's bytes are then the
+ContentBlob `content_sha256`, `byte_offset = 0` and `byte_length` is the blob size; the raw-bytes view
+reads and re-hashes that blob. A locator ending in ` +wal` was read from a WAL-applied view of the db; it
+does not say that the row itself lives in the WAL. v0.3.0 binaries refuse a v2 case.
+
+Adapter-set attributes (reserved prefix `vem_`): `vem_turn` (records with equal values form one
+conversation turn; it also keys the adapter's `tool` records to their turn), `vem_content_class`
+(`prompt|injected|command|command_output|caveat|paste`, overrides the user-record heuristic) and
+`vem_confidence` (`low|medium|high`, on derived protobuf messages).
 
 `SourceFile.rel_path_encoded`: the `rel_path` holds percent-encoded bytes of a non-UTF-8 name, so
 the stored path decodes losslessly. `SourceFile.kind`: `File` for a regular file, `Symlink` for a
@@ -286,9 +306,30 @@ Cross-generation ids (`composerId`, store.db session id, transcript id) are reco
 IdentityClaims with join status, and joins run across roots of the same case so that
 `.cursor` and the IDE directory link when both are present; sessions are never merged on
 an unmatched claim.
-`ai-tracking/ai-code-tracking.db` → attribution details on `FileEdited` observations;
-`User/History/` → before/after ContentBlobs; `prompt_history.json` → `PasteDetected`-style
-prompt observations.
+`User/History/` → one `LocalHistory` session per edited file whose entries are `FileWritten`
+observations with before/after ContentBlobs.
+
+**SQLite evidence.** An evidence db is opened only read-only and immutable
+(`?mode=ro&immutable=1`), with `trusted_schema = OFF` and the defensive flag, and only objects
+of type `table` are read (a view or virtual table with an expected name counts as absent). Before it
+opens a db the parser checks its hash against the manifest. Cursor runs its dbs in WAL mode, so the
+newest chats are often only in `<db>-wal`, which `immutable=1` ignores. When the manifest lists a
+non-empty `-wal`, the parser copies the db and the WAL into a private temporary directory and reads
+that copy; the evidence is never opened without `immutable=1`. Such a read records one `WalApplied`
+anomaly (Info) and its locators end in ` +wal`: "read from a WAL-applied view", not "this row is in
+the WAL". Tagging WAL-only rows is a follow-up. Values over 64 MiB are skipped with `OversizedRecord`.
+
+**Scope (v0.4.0).** `acp-sessions/`, `ai-tracking/ai-code-tracking.db` and `prompt_history.json` are
+discovered, retained and listed in the inventory, but not parsed. The `store.db` parser is
+experimental (above).
+
+**Open hypotheses, settled at the real-corpus QA gate before the v0.4.0 tag:**
+H1 the transcript id, `composerId` and `store.db` `agentId` are the same value (if not, the claims
+stay `Unmatched`, which is safe); H2 transcript lines may carry `tool_result` blocks (paired when
+present); H3 bubble `createdAt` is an ISO string or epoch ms (both handled); H4 `agent-tools/*.txt`
+are named by tool-call id (attached when they match, otherwise inventoried); H5 `store.db` may hold
+JSON message blobs alongside protobuf nodes; H6 user text wrapped in `<user_query>`/`<user_info>`
+tags is shown verbatim.
 
 ## 7. Case database
 
@@ -341,7 +382,10 @@ harness, role, origin and observation kind; attributes carry session id, message
 model, tool name, cwd, file path, command, confidence.
 
 **Vestigo Parquet** (interchange format v1): same events with `source_file` (evidence
-relative path), `file_hash`, `byte_offset`, `content_hash` taken from Provenance rows.
+relative path), `file_hash`, `byte_offset`, `content_hash` taken from Provenance rows, and a
+nullable `locator`. A located record (§4, `Provenance.locator`) has no byte offset into its file:
+Timesketch events carry `evidence_locator` instead of `evidence_byte_offset`, and in Parquet its
+`locator` is set and its `byte_offset` is 0; `content_hash` verifies the record either way.
 
 Scope: whole case, one root, or one session.
 

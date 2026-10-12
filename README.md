@@ -1,8 +1,8 @@
 # Vestigia Ex Machina
 
 Forensic analysis of the on-disk traces left by agentic AI coding harnesses.
-Claude Code is supported today; Codex CLI and Cursor are planned but not yet
-available. Attach a collected harness directory to a case,
+Claude Code and Cursor (both the `.cursor` directory and the IDE application directory) are
+supported; Codex CLI is planned but not yet available. Attach a collected harness directory to a case,
 ingest it, browse sessions with per-record provenance, export Timesketch and
 Vestigo timelines.
 
@@ -67,6 +67,29 @@ vem verify ./case-42
 
 Evidence is opened read-only and never modified. Every file is hashed on attach and retained
 in the case directory, so the case stays self-contained after the evidence is detached.
+
+## Cursor
+
+Cursor keeps its traces in two directories. Collect both and attach each as its own root; `vem`
+identifies them without `--harness` and links their sessions by composer id (sessions are never merged).
+
+| Directory | Harness | Linux | macOS | Windows |
+|---|---|---|---|---|
+| `.cursor` (agent transcripts, chat store) | `cursor` | `~/.cursor` | `~/.cursor` | `%USERPROFILE%\.cursor` |
+| IDE application directory (`state.vscdb`, workspace storage, local history) | `cursor-ide` | `~/.config/Cursor` | `~/Library/Application Support/Cursor` | `%APPDATA%\Cursor` |
+
+```bash
+vem evidence add ./case-42 /evidence/alice/.cursor        --label "alice .cursor"
+vem evidence add ./case-42 /evidence/alice/config/Cursor  --label "alice Cursor IDE"
+vem ingest ./case-42
+```
+
+Copy each directory with its `-wal` files: Cursor's SQLite databases run in WAL mode and the newest
+chats are often only in the WAL. `vem` reads such a database from a private copy with the WAL applied
+and never writes to the evidence. Parsed: agent transcripts, the IDE chat key-value store
+(`cursorDiskKV`), workspace links and local file history. The `.cursor/chats/*/*/store.db` parser is
+**experimental**: it walks protobuf without a schema and marks what it finds as derived, low confidence.
+`acp-sessions/`, `ai-tracking/` and `prompt_history.json` are hashed and listed, not parsed.
 
 ## Conversation viewer
 
