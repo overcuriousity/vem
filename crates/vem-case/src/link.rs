@@ -1,7 +1,9 @@
-//! Post-ingest passes per evidence root: parent links, identity-claim resolution, session bounds.
+//! Post-ingest passes: per evidence root, parent links, identity-claim resolution and session bounds;
+//! case-wide, the `cursor:` identity claims, which join sessions across roots.
 
 use crate::error::CaseError;
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::{BTreeSet, HashMap};
 
 pub fn link_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseError> {
     conn.execute(
@@ -18,7 +20,7 @@ pub fn link_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseError> {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.session_id, c.scheme, c.claimed_id FROM identity_claims c
              JOIN sessions s ON s.id = c.session_id JOIN stores st ON st.id = s.store_id
-             WHERE st.root_id = ?1 AND c.join_status = 'unmatched' ORDER BY c.id",
+             WHERE st.root_id = ?1 AND c.join_status = 'unmatched' AND c.scheme NOT LIKE 'cursor:%' ORDER BY c.id",
         )?;
         let rows = stmt.query_map([root_id], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
@@ -81,6 +83,63 @@ pub fn link_sessions(conn: &Connection, root_id: i64) -> Result<(), CaseError> {
             params![root_id, store_id, file_id, sid, format!("subagent session {hid} has no parent transcript in this root")],
         )?;
     }
+    Ok(())
+}
+
+/// Re-evaluates every `cursor:` claim of the case. Candidates are the other sessions of `cursor` and
+/// `cursor-ide` stores that make the same claim or whose `harness_session_id` is the claimed id: one is
+/// `matched`, more are `ambiguous`, none is `unmatched`. Sessions are never merged. One transaction;
+/// idempotent, so it runs after every ingest and a root attached later joins the earlier ones.
+pub fn link_cursor_claims(conn: &Connection) -> Result<(), CaseError> {
+    let tx = conn.unchecked_transaction()?;
+    let sessions: Vec<(i64, String)> = {
+        let mut stmt = tx.prepare(
+            "SELECT s.id, s.harness_session_id FROM sessions s JOIN stores st ON st.id = s.store_id
+             WHERE st.harness IN ('cursor', 'cursor-ide')",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let claims: Vec<(i64, i64, String, String)> = {
+        let mut stmt = tx.prepare(
+            "SELECT id, session_id, scheme, claimed_id FROM identity_claims
+             WHERE scheme LIKE 'cursor:%' ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let cursor: BTreeSet<i64> = sessions.iter().map(|(id, _)| *id).collect();
+    let mut by_harness_id: HashMap<&str, Vec<i64>> = HashMap::new();
+    for (id, hid) in &sessions {
+        by_harness_id.entry(hid).or_default().push(*id);
+    }
+    let mut by_claim: HashMap<(&str, &str), Vec<i64>> = HashMap::new();
+    for (_, sid, scheme, claimed) in &claims {
+        if cursor.contains(sid) {
+            by_claim.entry((scheme, claimed)).or_default().push(*sid);
+        }
+    }
+    let mut update = tx.prepare(
+        "UPDATE identity_claims SET join_status = ?2, matched_session_id = ?3 WHERE id = ?1",
+    )?;
+    for (id, sid, scheme, claimed) in &claims {
+        let candidates: BTreeSet<i64> = by_claim
+            .get(&(scheme.as_str(), claimed.as_str()))
+            .into_iter()
+            .chain(by_harness_id.get(claimed.as_str()))
+            .flatten()
+            .copied()
+            .filter(|c| c != sid)
+            .collect();
+        let (status, matched) = match candidates.len() {
+            0 => ("unmatched", None),
+            1 => ("matched", candidates.first().copied()),
+            _ => ("ambiguous", None),
+        };
+        update.execute(params![id, status, matched])?;
+    }
+    drop(update);
+    tx.commit()?;
     Ok(())
 }
 

@@ -4,7 +4,7 @@
 use crate::case::now;
 use crate::error::CaseError;
 use crate::evidence::decode_rel_path;
-use crate::link::{finalize_sessions, link_sessions};
+use crate::link::{finalize_sessions, link_cursor_claims, link_sessions};
 use crate::sink::DbSink;
 use crate::{blobs, Case, TOOL_VERSION};
 use rusqlite::params;
@@ -339,6 +339,8 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
         finalize_sessions(&case.conn, root_id)?;
         report.anomalies += crate::derive::flag_unreferenced_pastes(&case.conn, root_id)?;
     }
+    // Case-wide, every run: a root ingested now can match claims of roots ingested earlier.
+    link_cursor_claims(&case.conn)?;
     case.audit("ingest", None, serde_json::to_value(&report)?)?;
     Ok(report)
 }
