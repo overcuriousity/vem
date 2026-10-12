@@ -14,8 +14,17 @@ export function ProvenanceTab({ provenanceId }: { provenanceId: number }) {
       <dt>Evidence file</dt><dd className="mono">{p.root_path}/{p.rel_path}{p.rel_path_encoded ? " (name percent-encoded)" : ""}</dd>
       <dt>File sha256</dt><dd><CopyHash sha={p.file_sha256} length={64} /></dd>
       <dt>Retained copy</dt><dd>{p.retained ? "yes" : "no (read from the evidence root)"}</dd>
-      <dt>Byte offset</dt><dd className="mono">{p.byte_offset}</dd>
-      <dt>Byte length</dt><dd className="mono">{p.byte_length}</dd>
+      {p.locator ? (
+        <>
+          <dt>Locator</dt><dd className="mono">{p.locator}</dd>
+          <dt>Content blob length</dt><dd className="mono">{p.byte_length}</dd>
+        </>
+      ) : (
+        <>
+          <dt>Byte offset</dt><dd className="mono">{p.byte_offset}</dd>
+          <dt>Byte length</dt><dd className="mono">{p.byte_length}</dd>
+        </>
+      )}
       <dt>Record index</dt><dd className="mono">{p.record_index}</dd>
       <dt>Record sha256</dt><dd><CopyHash sha={p.content_sha256} length={64} /></dd>
       <dt>Parser</dt><dd className="mono">{p.parser_name} {p.parser_version}</dd>

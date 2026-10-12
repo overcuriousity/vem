@@ -72,6 +72,8 @@ export interface ProvenanceRow {
   id: number; source_file_id: number; rel_path: string; rel_path_encoded: boolean; file_sha256: string; root_path: string;
   retained: boolean; byte_offset: number; byte_length: number; record_index: number; content_sha256: string;
   parser_name: string; parser_version: string; origin: Origin;
+  /** Set when the record is not a byte range of the file (a SQLite row or blob); its bytes are the content blob. */
+  locator?: string | null;
 }
 export interface RawWindow { total_length: number; offset: number; bytes_b64: string; verified: boolean }
 
