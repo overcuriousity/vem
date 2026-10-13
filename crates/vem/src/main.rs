@@ -99,7 +99,7 @@ enum EvidenceCmd {
         #[arg(long)]
         os: Option<String>,
         /// Harness that produced the directory (default: auto-detect).
-        /// Only claude-code is supported today.
+        /// Supported: claude-code, cursor, cursor-ide. codex is not yet supported.
         #[arg(long, value_enum)]
         harness: Option<HarnessArg>,
         #[arg(long)]
@@ -115,9 +115,9 @@ enum HarnessArg {
     ClaudeCode,
     /// Codex CLI (not yet supported).
     Codex,
-    /// Cursor CLI (not yet supported).
+    /// Cursor CLI.
     Cursor,
-    /// Cursor IDE (not yet supported).
+    /// Cursor IDE.
     CursorIde,
 }
 
