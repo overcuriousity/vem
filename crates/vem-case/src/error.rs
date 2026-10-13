@@ -6,6 +6,11 @@ pub enum CaseError {
     Sqlite(#[from] rusqlite::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("io: {path}: {source}")]
+    IoAt {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
     #[error("directory is not empty, refusing to create a case in it: {0}")]

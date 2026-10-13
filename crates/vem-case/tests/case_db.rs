@@ -74,3 +74,21 @@ fn blobs_are_content_addressed_and_deduplicated() {
         .unwrap();
     assert_eq!(n, 1);
 }
+
+#[test]
+fn create_io_error_names_the_failing_path() {
+    // A regular file where a directory must go makes create_dir_all fail on
+    // every platform; the error must say which path it was working on.
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("not-a-dir");
+    std::fs::write(&file, "x").unwrap();
+    let dir = file.join("case1");
+    let err = Case::create(&dir, "n", None)
+        .err()
+        .expect("create must fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains(&dir.join("blobs").display().to_string()),
+        "io error does not name the path: {msg}"
+    );
+}
