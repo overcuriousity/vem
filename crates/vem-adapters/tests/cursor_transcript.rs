@@ -368,3 +368,42 @@ fn derive_observations_table() {
     let o = derive_observations("Shell", &json!({"command": "x"}), Some(false), tc, &at);
     assert_eq!(o[0].confidence, Confidence::Medium);
 }
+
+/// The shape of real Cursor agent transcripts (MIK-213, from the owner's structure-only report): tool
+/// calls are `tool_use` blocks with `name` and `input` but no `id`, and no `tool_result` blocks follow.
+#[test]
+fn id_less_tool_use_blocks_are_tool_calls() {
+    let body = [
+        r#"{"role":"user","message":{"content":[{"type":"text","text":"q"}]}}"#,
+        r#"{"role":"assistant","message":{"content":[{"type":"text","text":"a"},{"type":"tool_use","name":"Shell","input":{"command":"ls","description":"d"}}]}}"#,
+        r#"{"role":"assistant","message":{"content":[{"type":"tool_use","name":"StrReplace","input":{"path":"/p/f.rs","old_string":"a","new_string":"b"}},{"type":"tool_use","name":"Read","input":{"path":"/p/g.rs","limit":10,"offset":5}}]}}"#,
+        r#"{"type":"turn_ended","status":"ok"}"#,
+    ]
+    .join("\n")
+        + "\n";
+    let (tmp, rel) = temp_transcript("s", &body);
+    let mut sink = VecSink::default();
+    parse_cursor(tmp.path(), &rel, &mut sink);
+    let calls: Vec<_> = sink.tool_calls.iter().map(|(_, _, t)| t).collect();
+    assert_eq!(calls.len(), 3, "{calls:?}");
+    assert_eq!(calls[0].name, "Shell");
+    assert_eq!(calls[0].category, ToolCategory::Shell);
+    assert_eq!(calls[0].input["command"], "ls");
+    assert_eq!(calls[0].tool_use.ordinal, 1);
+    assert_eq!(calls[1].name, "StrReplace");
+    assert_eq!(calls[2].name, "Read");
+    assert_eq!(calls[2].tool_use.ordinal, 1);
+    assert!(calls
+        .iter()
+        .all(|c| c.tool_result.is_none() && c.result_payload.is_none()));
+    // The missing id is still reported once, as information: the calls are parsed but cannot be paired.
+    let no_id: Vec<_> = sink
+        .anomalies_of(AnomalyKind::UnknownRecordType)
+        .into_iter()
+        .filter(|a| a.details["block_type"] == "tool_use")
+        .collect();
+    assert_eq!(no_id.len(), 1, "{no_id:?}");
+    assert_eq!(no_id[0].details["count"], 3);
+    assert_eq!(no_id[0].details["reason"], "missing_id");
+    assert_eq!(no_id[0].severity, Severity::Info);
+}

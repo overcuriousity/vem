@@ -1,6 +1,8 @@
 //! Parser for Cursor agent transcripts: `projects/<slug>/agent-transcripts/<id>/<id>.jsonl`,
 //! `…/agent-transcripts/<id>.jsonl` and `…/<id>/subagents/<sid>.jsonl` (spec §6.3). Lines are
-//! `{role, message: {content}}` with Anthropic-style content and no timestamps.
+//! `{role, message: {content}}` with Anthropic-style content and no timestamps. Real Cursor transcripts
+//! write `tool_use` blocks without an `id` and no `tool_result` blocks; such a call is kept as a tool
+//! call without a result.
 
 use super::tools::{categorize, derive_observations};
 use super::{record_anomaly, FieldCensus, RECORD_CAP};
@@ -72,9 +74,10 @@ struct Pending {
 }
 
 /// Content blocks this parser keeps but cannot interpret, by `(type, reason)`: count, first locator,
-/// first record. A block of an unknown type is kept on its message as `other`, and a `tool_use` or
-/// `tool_result` without an id cannot be paired; either way what it carries (a tool call in an
-/// unexpected shape, say) is not parsed, so each gets one `unknown_record_type` per file.
+/// first record. A block of an unknown type is kept on its message as `other`, and a `tool_result`
+/// without an id cannot be paired; either way what it carries (a tool call in an unexpected shape, say)
+/// is not parsed, so each gets one warning `unknown_record_type` per file. A `tool_use` without an id is
+/// parsed as a call without a result; that gets one `info` per file.
 #[derive(Default)]
 struct BlockCensus {
     seen: BTreeMap<(String, &'static str), (u64, String, Provenance)>,
@@ -106,15 +109,25 @@ impl BlockCensus {
 
     fn finish(&mut self, file: SourceFileHandle, session: SessionHandle, sink: &mut dyn ParseSink) {
         for ((block_type, reason), (count, first, prov)) in std::mem::take(&mut self.seen) {
-            let what = match reason {
-                "missing_id" => format!("{block_type:?} without an id were kept and not paired"),
-                _ => format!("of unknown type {block_type:?} were kept as `other` and not parsed"),
+            let (severity, what) = match reason {
+                "missing_id" if block_type == "tool_use" => (
+                    Severity::Info,
+                    format!("{block_type:?} without an id were parsed as tool calls without a result or sidecar"),
+                ),
+                "missing_id" => (
+                    Severity::Warning,
+                    format!("{block_type:?} without an id were kept and not paired"),
+                ),
+                _ => (
+                    Severity::Warning,
+                    format!("of unknown type {block_type:?} were kept as `other` and not parsed"),
+                ),
             };
             sink.anomaly(record_anomaly(
                 file,
                 Some(session),
                 AnomalyKind::UnknownRecordType,
-                Severity::Warning,
+                severity,
                 Some(&prov),
                 format!("{count} content block(s) {what}"),
                 json!({ "record_kind": "content_block", "block_type": block_type, "reason": reason, "count": count, "first_locator": first }),
@@ -232,6 +245,17 @@ impl State<'_> {
     ) {
         for (ordinal, b) in blocks.iter().enumerate() {
             let Some(id) = b.tool_use_id.clone() else {
+                // Nothing can pair with an id-less call: emit it now, in order, without a result.
+                if b.kind == BlockKind::ToolUse {
+                    let p = Pending {
+                        message: msg,
+                        ordinal: ordinal as u32,
+                        name: str_field(&b.payload, "name").unwrap_or_default(),
+                        input: b.payload.get("input").cloned().unwrap_or(Value::Null),
+                        result_payload: None,
+                    };
+                    self.emit_call(p, None, sink);
+                }
                 continue;
             };
             match b.kind {
