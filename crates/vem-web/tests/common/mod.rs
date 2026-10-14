@@ -23,15 +23,37 @@ pub fn fixture(name: &str) -> PathBuf {
 
 /// A case in a temp dir with each named fixture attached (retained) and ingested.
 pub fn ingested(fixtures: &[&str]) -> (tempfile::TempDir, PathBuf) {
+    ingested_paths(&fixtures.iter().map(|f| fixture(f)).collect::<Vec<_>>())
+}
+
+pub fn cursor_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/cursor")
+        .join(name)
+        .canonicalize()
+        .unwrap()
+}
+
+/// A case with both Cursor fixture roots (`.cursor` and the IDE directory) and the Claude
+/// `basic` fixture, ingested.
+pub fn cursor_case() -> (tempfile::TempDir, PathBuf) {
+    ingested_paths(&[
+        cursor_fixture("dotcursor"),
+        cursor_fixture("ide"),
+        fixture("basic"),
+    ])
+}
+
+fn ingested_paths(roots: &[PathBuf]) -> (tempfile::TempDir, PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("case");
     let mut case = Case::create(&dir, "web test", Some("examiner")).unwrap();
-    for f in fixtures {
+    for f in roots {
         attach(
             &mut case,
-            &fixture(f),
+            f,
             AttachOptions {
-                label: f.to_string(),
+                label: f.file_name().unwrap().to_string_lossy().into_owned(),
                 host: None,
                 user: None,
                 os: None,

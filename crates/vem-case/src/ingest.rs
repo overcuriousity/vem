@@ -4,7 +4,7 @@
 use crate::case::now;
 use crate::error::CaseError;
 use crate::evidence::decode_rel_path;
-use crate::link::{finalize_sessions, link_sessions};
+use crate::link::{finalize_sessions, link_cursor_claims, link_sessions};
 use crate::sink::DbSink;
 use crate::{blobs, Case, TOOL_VERSION};
 use rusqlite::params;
@@ -58,6 +58,8 @@ enum Resolved {
         file_id: i64,
         path: PathBuf,
         mtime: Option<String>,
+        /// The manifest hash of source file `file_id`.
+        sha256: String,
     },
     /// The evidence file cannot be read and there is no retained copy.
     Unavailable(String),
@@ -84,6 +86,7 @@ fn resolve(
                 live.to_path_buf()
             },
             mtime: f.mtime.clone(),
+            sha256: f.sha256.clone(),
         }),
         Ok(_) => {
             let tx = case.conn.transaction()?;
@@ -139,6 +142,7 @@ fn resolve(
                     live.to_path_buf()
                 },
                 mtime,
+                sha256: new_sha,
             })
         }
         Err(e) => {
@@ -148,6 +152,7 @@ fn resolve(
                     file_id: f.id,
                     path: copy,
                     mtime: f.mtime.clone(),
+                    sha256: f.sha256.clone(),
                 })
             } else {
                 Ok(Resolved::Unavailable(format!(
@@ -244,13 +249,14 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     continue;
                 }
                 let rel_path = decode_rel_path(&f.rel, f.encoded);
-                let (file_id, parse_path, mtime) =
+                let (file_id, parse_path, mtime, sha256) =
                     match resolve(case, f, &root.join(&rel_path), &mut report)? {
                         Resolved::Ready {
                             file_id,
                             path,
                             mtime,
-                        } => (file_id, path, mtime),
+                            sha256,
+                        } => (file_id, path, mtime, sha256),
                         Resolved::Unavailable(err) => {
                             mark_failed(case, f.id, &err)?;
                             report.files_failed += 1;
@@ -264,6 +270,7 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
                     abs_path: parse_path,
                     handle: SourceFileHandle(file_id),
                     mtime: mtime.as_deref().and_then(parse_ts_to_system_time),
+                    sha256: &sha256,
                 };
                 let tx = case.conn.transaction()?;
                 let (parsed, counts, sink_error, parsers, created) = {
@@ -332,6 +339,8 @@ pub fn ingest(case: &mut Case, root_filter: Option<i64>) -> Result<IngestReport,
         finalize_sessions(&case.conn, root_id)?;
         report.anomalies += crate::derive::flag_unreferenced_pastes(&case.conn, root_id)?;
     }
+    // Case-wide, every run: a root ingested now can match claims of roots ingested earlier.
+    link_cursor_claims(&case.conn)?;
     case.audit("ingest", None, serde_json::to_value(&report)?)?;
     Ok(report)
 }

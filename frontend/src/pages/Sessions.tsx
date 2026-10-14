@@ -29,13 +29,13 @@ export default function Sessions() {
       <h1>Sessions</h1>
       <div className="filters">
         <label>Harness<select aria-label="Harness" value={q.harness ?? ""} onChange={(e) => set("harness", e.target.value)}>
-          <option value="">any</option><option value="claude_code">claude_code</option><option value="codex">codex</option><option value="cursor">cursor</option><option value="cursor_ide">cursor_ide</option>
+          <option value="">any</option>{["claude-code", "codex", "cursor", "cursor-ide"].map((h) => <option key={h} value={h}>{h}</option>)}
         </select></label>
         <label>Root<select aria-label="Root" value={q.root ?? ""} onChange={(e) => set("root", e.target.value)}>
           <option value="">any</option>{roots.data?.map((r) => <option key={r.root.id} value={r.root.id}>{r.root.label}</option>)}
         </select></label>
         <label>Kind<select aria-label="Kind" value={q.kind ?? ""} onChange={(e) => set("kind", e.target.value)}>
-          <option value="">any</option>{["primary", "subagent", "resumed", "forked", "sidecar_only"].map((k) => <option key={k} value={k}>{k}</option>)}
+          <option value="">any</option>{["primary", "subagent", "resumed", "forked", "sidecar_only", "local_history"].map((k) => <option key={k} value={k}>{k}</option>)}
         </select></label>
         <label>Project contains<input aria-label="Project contains" defaultValue={q.project ?? ""} onBlur={(e) => set("project", e.target.value.trim())} /></label>
         <label>From (UTC)<input aria-label="From" type="date" value={q.from ?? ""} onChange={(e) => set("from", e.target.value)} /></label>

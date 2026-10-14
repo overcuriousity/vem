@@ -1,7 +1,7 @@
 import type { ToolCallRow } from "../api/types";
 
 export type ChipStatus = "ok" | "error" | "no result";
-const ARG_KEYS = ["command", "file_path", "notebook_path", "path", "pattern", "url", "query", "description", "subagent_type", "prompt"];
+const ARG_KEYS = ["command", "file_path", "notebook_path", "path", "target_file", "relative_workspace_path", "target_directory", "glob_pattern", "search_term", "pattern", "url", "query", "description", "subagent_type", "prompt"];
 
 export function oneLine(s: string, max = 80): string {
   const t = s.replace(/\s+/g, " ").trim();

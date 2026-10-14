@@ -334,3 +334,24 @@ fn the_case_and_its_exports_stay_out_of_evidence_roots() {
         assert!(!ev.join("projects/planted.jsonl").exists());
     }
 }
+
+#[test]
+fn collection_folder_lists_both() {
+    let tmp = tempfile::tempdir().unwrap();
+    let collection = tmp.path().join("collection");
+    let cursor = |name: &str| {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/cursor")
+            .join(name)
+    };
+    copy_dir(&cursor("dotcursor"), &collection.join("dotcursor"));
+    copy_dir(&cursor("ide"), &collection.join("ide"));
+    let children = child_candidates(&collection);
+    assert_eq!(children.len(), 2, "{children:?}");
+    assert!(children[0].0.ends_with("dotcursor"));
+    assert_eq!(children[0].1.len(), 1);
+    assert_eq!(children[0].1[0].harness, Harness::Cursor);
+    assert!(children[1].0.ends_with("ide"));
+    assert_eq!(children[1].1.len(), 1);
+    assert_eq!(children[1].1[0].harness, Harness::CursorIde);
+}

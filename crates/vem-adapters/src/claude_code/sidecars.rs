@@ -72,6 +72,7 @@ pub fn parse_history(
             parser_name: HISTORY_PARSER_NAME.to_string(),
             parser_version: HISTORY_PARSER_VERSION.to_string(),
             origin: ProvOrigin::Stored,
+            locator: None,
         };
         let anomaly = |sink: &mut dyn ParseSink,
                        kind,

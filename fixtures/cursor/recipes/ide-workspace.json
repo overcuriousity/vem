@@ -1,0 +1,21 @@
+{
+  "out": "ide/User/workspaceStorage/ws1/state.vscdb",
+  "kind": "kv",
+  "tables": {
+    "ItemTable": {
+      "composer.composerData": {
+        "allComposers": [
+          {
+            "composerId": "1c1c1c1c-0000-4000-8000-000000000001"
+          },
+          {
+            "composerId": "1c1c1c1c-0000-4000-8000-000000000005"
+          }
+        ],
+        "selectedComposerIds": [
+          "1c1c1c1c-0000-4000-8000-000000000001"
+        ]
+      }
+    }
+  }
+}

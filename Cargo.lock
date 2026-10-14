@@ -2014,7 +2014,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vem"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2031,9 +2031,12 @@ dependencies = [
 
 [[package]]
 name = "vem-adapters"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
+ "chrono",
  "insta",
+ "proptest",
+ "rusqlite",
  "serde_json",
  "tempfile",
  "vem-core",
@@ -2042,7 +2045,7 @@ dependencies = [
 
 [[package]]
 name = "vem-case"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "arrow",
  "chrono",
@@ -2062,7 +2065,7 @@ dependencies = [
 
 [[package]]
 name = "vem-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "hex",
@@ -2076,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "vem-web"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "axum",
  "base64 0.22.1",

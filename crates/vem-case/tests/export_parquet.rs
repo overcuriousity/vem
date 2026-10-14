@@ -53,9 +53,11 @@ fn writes_vestigo_v1_schema_and_footer() {
             "artifact_long",
             "display_name",
             "tags",
-            "attributes"
+            "attributes",
+            "locator"
         ]
     );
+    assert!(schema.field_with_name("locator").unwrap().is_nullable());
     use arrow::datatypes::{DataType, TimeUnit};
     assert_eq!(
         schema.field_with_name("byte_offset").unwrap().data_type(),

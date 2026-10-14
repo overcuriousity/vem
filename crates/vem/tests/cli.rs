@@ -235,3 +235,47 @@ fn unrecognized_evidence_exits_2_with_hint() {
         .stderr(predicate::str::contains(".claude"))
         .stderr(predicate::str::contains("claude-code"));
 }
+
+#[test]
+fn attach_cursor_roots() {
+    let tmp = tempfile::tempdir().unwrap();
+    let case = tmp.path().join("case1");
+    let case_s = case.to_string_lossy().to_string();
+    vem()
+        .args(["case", "new", &case_s, "--name", "cursor"])
+        .assert()
+        .success();
+    let cursor = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/cursor")
+            .join(name)
+            .canonicalize()
+            .unwrap()
+    };
+    vem()
+        .args([
+            "evidence",
+            "add",
+            &case_s,
+            cursor("dotcursor").to_str().unwrap(),
+            "--label",
+            "alice .cursor",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cursor"))
+        .stdout(predicate::str::contains("cursor:agent-transcripts"));
+    vem()
+        .args([
+            "evidence",
+            "add",
+            &case_s,
+            cursor("ide").to_str().unwrap(),
+            "--label",
+            "alice Cursor app",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cursor-ide"))
+        .stdout(predicate::str::contains("cursor:state-vscdb"));
+}
