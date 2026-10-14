@@ -59,6 +59,12 @@ dl.kv dd { margin: 0; word-break: break-all; }
 .meta-divider { align-self: flex-end; background: none; border: none; color: var(--muted); font-size: 11px; line-height: 14px; margin: -6px 0; padding: 0 4px; cursor: pointer; opacity: 0.75; }
 .meta-divider:hover { opacity: 1; text-decoration: underline; }
 .drawer { position: sticky; top: 56px; align-self: start; max-height: calc(100vh - 72px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+/* Too narrow for two columns (the drawer's 360px minimum would squeeze the stream to nothing and scroll the page):
+ * the stream keeps the full width and the drawer floats over it until closed. */
+@media (max-width: 760px) {
+  .session-layout.with-drawer { grid-template-columns: minmax(0, 1fr); }
+  .session-layout.with-drawer .drawer { position: fixed; top: auto; bottom: 8px; left: 8px; right: 8px; max-height: 60vh; z-index: 20; box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.2); }
+}
 .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
 .tabs [role="tab"][aria-selected="true"] { font-weight: 700; border-bottom: 2px solid var(--accent); }
