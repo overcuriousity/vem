@@ -63,7 +63,10 @@ dl.kv dd { margin: 0; word-break: break-all; }
  * the stream keeps the full width and the drawer floats over it until closed. */
 @media (max-width: 760px) {
   .session-layout.with-drawer { grid-template-columns: minmax(0, 1fr); }
-  .session-layout.with-drawer .drawer { position: fixed; top: auto; bottom: 8px; left: 8px; right: 8px; max-height: 60vh; z-index: 20; box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.2); }
+  .session-layout.with-drawer .drawer { position: fixed; top: auto; bottom: 8px; left: 8px; right: 8px; max-height: 50vh; padding-bottom: env(safe-area-inset-bottom); z-index: 20; box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.2); }
+  /* The selected row scrolls to above the drawer, never under it; the spacer lets the last rows get there too. */
+  html:has(.session-layout.with-drawer) { scroll-padding-bottom: calc(50vh + 16px); }
+  .session-layout.with-drawer { padding-bottom: calc(50vh + 16px); }
 }
 .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--border); }

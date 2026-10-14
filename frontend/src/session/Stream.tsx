@@ -4,7 +4,7 @@ import { MessageView } from "./MessageView";
 import { TurnView } from "./TurnView";
 import { UserMessage } from "./UserMessage";
 import { absorbedByCall, itemMessageId, streamItems } from "./turns";
-import type { Selection } from "./selection";
+import { formatSelection, type Selection } from "./selection";
 
 export { streamItems } from "./turns";
 
@@ -31,6 +31,15 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
     el?.classList.add("flash");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A new selection scrolls its row into view; on a narrow screen the scroll padding keeps it above the drawer.
+  const selKey = selection ? formatSelection(selection) : null;
+  useEffect(() => {
+    if (!selection || selection.type === "block") return;
+    const el = selection.type === "toolcall" ? document.getElementById(`toolcall-${selection.id}`) : document.getElementById(`message-${selection.id}`)?.closest("article");
+    el?.scrollIntoView?.({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
