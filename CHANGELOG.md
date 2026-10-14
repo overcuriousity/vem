@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.4.0 (unreleased: tagged after the real-corpus QA gate)
+## v0.4.0 (2026-10-14)
 
 ### Added
 - Cursor adapters. Harness `cursor` (a collected `.cursor` directory: agent transcripts and, as
@@ -20,6 +20,17 @@
 ### Fixed
 - The Sessions page harness filter sent `claude_code` / `cursor_ide`, which matched nothing; it now
   sends `claude-code`, `codex`, `cursor`, `cursor-ide`.
+- Cursor transcripts: content blocks the parser does not understand are reported as anomalies
+  instead of being dropped silently (#18).
+- Cursor transcripts: `tool_use` blocks without an `id` are parsed as tool calls (#20).
+- Cursor user messages are unwrapped from their `<timestamp>` / `<user_query>` wrapper tags, which
+  no longer render literally in the GUI (#21).
+- `vem case new` names the failing path in its io errors (#19).
+- `--harness` help lists `cursor` and `cursor-ide` as supported (#17).
+
+### Known limitations
+- The Cursor IDE `cursorDiskKV` store (harness `cursor-ide`) is verified on fixtures only, not yet
+  on real-world data.
 
 ### Upgrade and downgrade
 - **The case schema is now v2 (ADR-1).** v0.4.0 opens v0.3.0 cases and migrates them by adding the
