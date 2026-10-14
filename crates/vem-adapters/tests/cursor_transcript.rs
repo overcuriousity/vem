@@ -407,3 +407,58 @@ fn id_less_tool_use_blocks_are_tool_calls() {
     assert_eq!(no_id[0].details["reason"], "missing_id");
     assert_eq!(no_id[0].severity, Severity::Info);
 }
+
+fn user_query_of(text: &str) -> Option<serde_json::Value> {
+    let line = json!({"role": "user", "message": {"content": [{"type": "text", "text": text}]}});
+    let (tmp, rel) = temp_transcript("q", &format!("{line}\n"));
+    let mut sink = VecSink::default();
+    parse_cursor(tmp.path(), &rel, &mut sink);
+    let (_, _, m) = &sink.messages[0];
+    // The block keeps the text verbatim; only the computed attribute unwraps it.
+    assert_eq!(m.blocks[0].text.as_deref(), Some(text));
+    assert_eq!(m.timestamp.origin, TsOrigin::Absent);
+    m.attributes.get("vem_user_query").cloned()
+}
+
+#[test]
+fn user_query_wrapper_unwrapped_with_embedded_timestamp() {
+    assert_eq!(
+        user_query_of(
+            "<timestamp>Tuesday, Aug 18, 2026, 9:38 PM (UTC+3)</timestamp>\n<user_query>\nhello there\n</user_query>"
+        ),
+        Some(json!({
+            "text": "hello there",
+            "embedded_timestamp": "Tuesday, Aug 18, 2026, 9:38 PM (UTC+3)",
+            "embedded_timestamp_utc": "2026-08-18T18:38:00.000Z",
+        }))
+    );
+    assert_eq!(
+        user_query_of("<timestamp>Monday, January 1, 2024, 12:05 AM (UTC-5:30)</timestamp><user_query>x</user_query>")
+            .unwrap()["embedded_timestamp_utc"],
+        json!("2024-01-01T05:35:00.000Z")
+    );
+    // An unrecognised timestamp format stays text, without a normalised value.
+    assert_eq!(
+        user_query_of("<timestamp>yesterday-ish</timestamp>\n<user_query>q</user_query>"),
+        Some(json!({ "text": "q", "embedded_timestamp": "yesterday-ish" }))
+    );
+    // A query without a timestamp.
+    assert_eq!(
+        user_query_of("<user_query>\nonly\n</user_query>\n"),
+        Some(json!({ "text": "only" }))
+    );
+}
+
+#[test]
+fn user_query_malformed_wrapper_kept_verbatim() {
+    for text in [
+        "plain prompt",
+        "<user_query>no close",
+        "<timestamp>t</timestamp> no query",
+        "<timestamp>t<user_query>q</user_query>",
+        "before <user_query>q</user_query>",
+        "<user_query>q</user_query> after",
+    ] {
+        assert_eq!(user_query_of(text), None, "{text:?}");
+    }
+}

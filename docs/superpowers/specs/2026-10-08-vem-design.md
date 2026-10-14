@@ -191,7 +191,8 @@ does not say that the row itself lives in the WAL. v0.3.0 binaries refuse a v2 c
 Adapter-set attributes (reserved prefix `vem_`): `vem_turn` (records with equal values form one
 conversation turn; it also keys the adapter's `tool` records to their turn), `vem_content_class`
 (`prompt|injected|command|command_output|caveat|paste`, overrides the user-record heuristic) and
-`vem_confidence` (`low|medium|high`, on derived protobuf messages).
+`vem_confidence` (`low|medium|high`, on derived protobuf messages) and `vem_user_query` (Cursor
+agent transcripts, see §6.3).
 
 `SourceFile.rel_path_encoded`: the `rel_path` holds percent-encoded bytes of a non-UTF-8 name, so
 the stored path decodes losslessly. `SourceFile.kind`: `File` for a regular file, `Symlink` for a
@@ -293,6 +294,12 @@ file history). Three store generations, each a separate store kind with its own 
   `subagents/*.jsonl` and `agent-tools/*.txt`. Anthropic-style `role` + `message.content[]`
   → Message/Block directly. No per-record timestamps: session bounds come from file
   times (`FileMtime`), message timestamps are `Absent`. Sidecars become ContentBlobs.
+  A user line whose whole text is `[<timestamp>…</timestamp>]<user_query>…</user_query>`
+  keeps that text verbatim in its block and gets `vem_user_query = {text, embedded_timestamp?,
+  embedded_timestamp_utc?}`: the query and the timestamp the text claims for itself (UTC only
+  when the `Tuesday, Aug 18, 2026, 9:38 PM (UTC+3)` shape parses). The embedded timestamp is
+  shown labelled `embedded`; it is not the message timestamp and is not used for ordering or
+  session bounds. Any other text, including a malformed wrapper, gets no attribute.
 - **IDE key-value store** `User/globalStorage/state.vscdb`, table `cursorDiskKV`:
   `composerData:<id>` → Session, `bubbleId:<composerId>:<bubbleId>` → Message (type 1
   user, 2 assistant; `createdAt` → `Stored`). `workspaceStorage/<hash>/state.vscdb`

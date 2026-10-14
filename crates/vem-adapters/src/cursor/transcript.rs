@@ -2,7 +2,8 @@
 //! `…/agent-transcripts/<id>.jsonl` and `…/<id>/subagents/<sid>.jsonl` (spec §6.3). Lines are
 //! `{role, message: {content}}` with Anthropic-style content and no timestamps. Real Cursor transcripts
 //! write `tool_use` blocks without an `id` and no `tool_result` blocks; such a call is kept as a tool
-//! call without a result.
+//! call without a result. A user line wrapped as `<timestamp>…</timestamp><user_query>…</user_query>` keeps
+//! its text verbatim; the query and the embedded timestamp are added as the `vem_user_query` attribute.
 
 use super::tools::{categorize, derive_observations};
 use super::{record_anomaly, FieldCensus, RECORD_CAP};
@@ -335,6 +336,16 @@ impl State<'_> {
         }
         let blocks = blocks_from_content(content.as_ref());
         self.blocks.note(&blocks, &prov);
+        if role_raw.as_ref().and_then(Value::as_str) == Some("user") {
+            let text: Vec<&str> = blocks
+                .iter()
+                .filter(|b| b.kind == BlockKind::Text)
+                .filter_map(|b| b.text.as_deref())
+                .collect();
+            if let Some(q) = user_query(&text.join("\n")) {
+                attributes.insert("vem_user_query".into(), q);
+            }
+        }
         let role_str = role_raw
             .as_ref()
             .and_then(Value::as_str)
@@ -387,6 +398,61 @@ impl State<'_> {
         );
         self.pair(msg, &blocks, &prov, sink);
     }
+}
+
+/// `{text, embedded_timestamp?, embedded_timestamp_utc?}` when the whole text is a Cursor query wrapper,
+/// optionally preceded by `<timestamp>`; `None` for anything else. The embedded timestamp is a claim of the
+/// message text: it is not the message timestamp and is not used for ordering or the session bounds.
+pub fn user_query(text: &str) -> Option<Value> {
+    fn inner<'a>(s: &'a str, tag: &str) -> Option<(&'a str, &'a str)> {
+        let rest = s.strip_prefix(&format!("<{tag}>"))?;
+        let close = format!("</{tag}>");
+        let end = rest.find(&close)?;
+        Some((&rest[..end], &rest[end + close.len()..]))
+    }
+    let mut s = text.trim();
+    let mut out = Map::new();
+    let mut ts = None;
+    if let Some((t, rest)) = inner(s, "timestamp") {
+        if t.contains('<') {
+            return None;
+        }
+        ts = Some(t.trim());
+        s = rest.trim_start();
+    }
+    let body = s
+        .strip_prefix("<user_query>")?
+        .strip_suffix("</user_query>")?;
+    out.insert("text".into(), Value::String(body.trim().to_string()));
+    if let Some(t) = ts {
+        out.insert("embedded_timestamp".into(), Value::String(t.to_string()));
+        if let Some(utc) = embedded_utc(t) {
+            out.insert("embedded_timestamp_utc".into(), Value::String(utc));
+        }
+    }
+    Some(Value::Object(out))
+}
+
+/// `Tuesday, Aug 18, 2026, 9:38 PM (UTC+3)` in UTC (`TS_FORMAT`); `None` for any other shape.
+fn embedded_utc(raw: &str) -> Option<String> {
+    let (local, zone) = raw.strip_suffix(')')?.rsplit_once(" (UTC")?;
+    let offset_secs = if zone.is_empty() {
+        0
+    } else {
+        let sign = match zone.as_bytes()[0] {
+            b'+' => 1,
+            b'-' => -1,
+            _ => return None,
+        };
+        let (h, m) = zone[1..].split_once(':').unwrap_or((&zone[1..], "0"));
+        sign * (h.parse::<i32>().ok()? * 3600 + m.parse::<i32>().ok()? * 60)
+    };
+    let offset = chrono::FixedOffset::east_opt(offset_secs)?;
+    let naive = ["%A, %b %d, %Y, %I:%M %p", "%A, %B %d, %Y, %I:%M %p"]
+        .iter()
+        .find_map(|f| chrono::NaiveDateTime::parse_from_str(local.trim(), f).ok())?;
+    let dt = naive.and_local_timezone(offset).single()?;
+    Some(dt.with_timezone(&chrono::Utc).format(TS_FORMAT).to_string())
 }
 
 pub fn parse_transcript(
