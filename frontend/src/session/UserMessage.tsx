@@ -45,6 +45,25 @@ export function splitPastes(text: string): { paste: boolean; text: string }[] {
   return out;
 }
 
+/** A Cursor query unwrapped by the adapter (`vem_user_query`): its text, and the timestamp embedded in the message. */
+export function userQuery(m: MessageRow): { text: string; embedded: string | null; utc: string | null } | null {
+  const q = m.attributes.vem_user_query as Record<string, unknown> | undefined;
+  if (!q || typeof q.text !== "string") return null;
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  return { text: q.text, embedded: str(q.embedded_timestamp), utc: str(q.embedded_timestamp_utc) };
+}
+
+/** A timestamp the message text claims for itself: not the record's timestamp, never used for ordering. */
+function EmbeddedTimestamp({ raw, utc }: { raw: string; utc: string | null }) {
+  const title = `embedded in the message text: ${raw}${utc ? ` (UTC ${utc})` : " (format not recognised)"}; not the record's timestamp`;
+  return (
+    <span className="ts">
+      <time className="mono" dateTime={utc ?? undefined} title={title}>{utc ?? raw}</time>{" "}
+      <span className="badge badge-inferred" title={title}>embedded</span>
+    </span>
+  );
+}
+
 /** A user record, drawn by what it is: a prompt, a local command, its output, or text the harness injected. */
 export function UserMessage({ message: m, p }: { message: MessageRow; p: CardProps }) {
   const text = textOf(m);
@@ -88,16 +107,19 @@ export function UserMessage({ message: m, p }: { message: MessageRow; p: CardPro
           </details>
         </article>
       );
-    default:
+    default: {
+      const query = userQuery(m);
+      const body = query ? query.text : text;
       return (
         <article {...props} className={[...base, m.role === "tool" ? "msg-tool" : "msg-user"].filter(Boolean).join(" ")}>
           <header className="msg-head">
             <span className="role">{m.role === "tool" ? "tool result" : "user"}</span>
             {ts}
+            {query?.embedded != null && <EmbeddedTimestamp raw={query.embedded} utc={query.utc} />}
             {m.content_class === "paste" && <span className="badge badge-info">contains paste</span>}
             {raw}
           </header>
-          {splitPastes(text).map((part, i) =>
+          {splitPastes(body).map((part, i) =>
             part.paste ? (
               <details key={i} className="paste">
                 <summary><span className="badge badge-info">paste</span> {part.text.length} chars</summary>
@@ -116,5 +138,6 @@ export function UserMessage({ message: m, p }: { message: MessageRow; p: CardPro
           ))}
         </article>
       );
+    }
   }
 }

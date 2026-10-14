@@ -2033,6 +2033,7 @@ dependencies = [
 name = "vem-adapters"
 version = "0.4.0"
 dependencies = [
+ "chrono",
  "insta",
  "proptest",
  "rusqlite",
