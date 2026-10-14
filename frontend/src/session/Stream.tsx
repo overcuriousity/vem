@@ -4,15 +4,16 @@ import { MessageView } from "./MessageView";
 import { TurnView } from "./TurnView";
 import { UserMessage } from "./UserMessage";
 import { absorbedByCall, itemMessageId, streamItems } from "./turns";
-import type { Selection } from "./selection";
+import { formatSelection, type Selection } from "./selection";
 
 export { streamItems } from "./turns";
 
 const USER_CLASSES = new Set(["prompt", "paste", "command", "command_output", "caveat", "injected", "tool_result"]);
 
-export function Stream({ messages, toolCalls, observations, childSessions, meta, selection, onSelect, onShowMeta }: {
+export function Stream({ messages, toolCalls, observations, childSessions, meta, selection, onSelect, onShowMeta, runsOpen = null }: {
   messages: MessageRow[]; toolCalls: ToolCallRow[]; observations: ObservationRow[]; childSessions: SessionRow[]; meta: boolean;
   selection: Selection | null; onSelect: (s: Selection | null) => void; onShowMeta: () => void;
+  runsOpen?: { open: boolean } | null;
 }) {
   const items = useMemo(() => streamItems(messages, meta), [messages, meta]);
   const toolCallsById = useMemo(() => new Map(toolCalls.map((t) => [t.id, t])), [toolCalls]);
@@ -21,7 +22,7 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
   const [focus, setFocus] = useState<number | null>(null);
 
   // A link with ?sel=message:N (from search) scrolls to and flashes that message once. An absorbed
-  // tool-result record is anchored inside its tool chip, so the turn card holding that chip is flashed.
+  // tool-result record is anchored inside its tool-call row, so the turn card holding that chip is flashed.
   useEffect(() => {
     if (selection?.type !== "message") return;
     const anchor = document.getElementById(`message-${selection.id}`);
@@ -30,6 +31,15 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
     el?.classList.add("flash");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A new selection scrolls its row into view; on a narrow screen the scroll padding keeps it above the drawer.
+  const selKey = selection ? formatSelection(selection) : null;
+  useEffect(() => {
+    if (!selection || selection.type === "block") return;
+    const el = selection.type === "toolcall" ? document.getElementById(`toolcall-${selection.id}`) : document.getElementById(`message-${selection.id}`)?.closest("article");
+    el?.scrollIntoView?.({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -52,7 +62,7 @@ export function Stream({ messages, toolCalls, observations, childSessions, meta,
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, visible, onSelect]);
 
-  const card = { toolCallsById, resultsByCall, observations, childSessions, selection, onSelect };
+  const card = { toolCallsById, resultsByCall, observations, childSessions, selection, onSelect, runsOpen };
   return (
     <div className="stream">
       {items.map((i) => {

@@ -105,3 +105,26 @@ test("session view renders without a drawer when nothing is selected", async () 
   expect(await screen.findByRole("heading", { name: "Add notes file" })).toBeInTheDocument();
   expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
 });
+
+test("details moves focus into the drawer; × and Esc close it and return focus to the details button", async () => {
+  const use = block("tool_use", { tool_call_id: 5 });
+  const m3 = msg(3, "assistant", [use], { turn_key: "T" });
+  vi.mocked(api.session).mockResolvedValue({ session, ancestors: [], children: [], claims: [] });
+  vi.mocked(api.messages).mockResolvedValue([msg(1, "user", [block("text", { text: "list" })]), m3]);
+  vi.mocked(api.toolCalls).mockResolvedValue([tool(5, "Shell", { command: "ls" }, { tool_use_block_id: use.id })]);
+  vi.mocked(api.sessionObservations).mockResolvedValue([]);
+  vi.mocked(api.message).mockResolvedValue({ message: m3, tool_calls: [], observations: [], annotations: [] });
+  vi.mocked(api.provenance).mockReturnValue(new Promise(() => {}));
+  renderWithProviders(<SessionView />, { route: "/sessions/7", path: "/sessions/:id" });
+  const details = await screen.findByRole("button", { name: "Inspect Shell call" });
+  for (const close of ["click", "Escape"] as const) {
+    await userEvent.click(details);
+    const drawer = await screen.findByRole("complementary", { name: "Detail drawer" });
+    const closeButton = within(drawer).getByRole("button", { name: "Close drawer" });
+    expect(closeButton).toHaveFocus();
+    if (close === "click") await userEvent.click(closeButton);
+    else await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("complementary", { name: "Detail drawer" })).not.toBeInTheDocument();
+    expect(details).toHaveFocus();
+  }
+});

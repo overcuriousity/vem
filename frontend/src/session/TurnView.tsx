@@ -4,12 +4,15 @@ import { Markdown } from "../components/Markdown";
 import { OriginBadge } from "../components/OriginBadge";
 import { Timestamp } from "../components/Timestamp";
 import { TruncatedText } from "../components/TruncatedText";
-import { ToolChip } from "./ToolChip";
+import { turnParts } from "./runs";
+import { ToolRun } from "./ToolRun";
 import type { Selection } from "./selection";
 
 export interface CardProps {
   toolCallsById: Map<number, ToolCallRow>; resultsByCall: Map<number, number[]>; observations: ObservationRow[]; childSessions: SessionRow[];
   selection: Selection | null; focused: boolean; onSelect: (s: Selection) => void;
+  /** The last expand/collapse-all from the session header; a new object each click, so every run follows it. */
+  runsOpen: { open: boolean } | null;
 }
 
 /** A small button that opens the record behind one block in the drawer (raw bytes, provenance). */
@@ -28,7 +31,6 @@ function isRedactedThinking(b: BlockRow): boolean {
 
 function TurnBlock({ block, p }: { block: BlockRow; p: CardProps }) {
   const raw = <RawButton block={block} onSelect={p.onSelect} selection={p.selection} />;
-  const tc = block.tool_call_id !== null ? p.toolCallsById.get(block.tool_call_id) : undefined;
   switch (block.kind) {
     case "text":
       return <div className="turn-block block-text">{raw}<Markdown text={block.text ?? ""} /></div>;
@@ -40,11 +42,8 @@ function TurnBlock({ block, p }: { block: BlockRow; p: CardProps }) {
         </details>
       );
     case "tool_use":
-      return tc ? (
-        <ToolChip tc={tc} resultIds={p.resultsByCall.get(tc.id) ?? []} selection={p.selection} observations={p.observations} childSessions={p.childSessions} onSelect={p.onSelect} />
-      ) : (
-        <div className="turn-block block-other">{raw}<span className="badge badge-warning">tool use without a tool call</span><JsonView value={block.payload} /></div>
-      );
+      // Tool uses with a tool call are drawn in a ToolRun; this is one without.
+      return <div className="turn-block block-other">{raw}<span className="badge badge-warning">tool use without a tool call</span><JsonView value={block.payload} /></div>;
     default:
       return (
         <div className="turn-block block-other">
@@ -90,7 +89,9 @@ export function TurnView({ messages, p }: { messages: MessageRow[]; p: CardProps
           </button>
         )}
       </header>
-      {shown.map((b) => <TurnBlock key={b.id} block={b} p={p} />)}
+      {turnParts(shown, p.toolCallsById).map((part) =>
+        part.kind === "run" ? <ToolRun key={`run-${part.key}`} calls={part.calls} p={p} /> : <TurnBlock key={part.block.id} block={part.block} p={p} />,
+      )}
     </article>
   );
 }
