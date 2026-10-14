@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -14,6 +15,8 @@ export default function SessionView() {
   const [params, setParams] = useSearchParams();
   const meta = params.get("meta") === "1";
   const sel = parseSelection(params.get("sel"));
+  // Expand/collapse all tool runs: session-level, not persisted. A new object per click, so every run follows it.
+  const [runsOpen, setRunsOpen] = useState<{ open: boolean } | null>(null);
   const detail = useQuery({ queryKey: ["session", id], queryFn: () => api.session(id), enabled: Number.isFinite(id) });
   const messages = useQuery({ queryKey: ["messages", id], queryFn: () => api.messages(id, true), enabled: Number.isFinite(id) });
   const toolCalls = useQuery({ queryKey: ["toolCalls", id], queryFn: () => api.toolCalls(id), enabled: Number.isFinite(id) });
@@ -34,11 +37,15 @@ export default function SessionView() {
   return (
     <div className={`session-layout${sel ? " with-drawer" : ""}`}>
       <div className="session-main">
-        <SessionHeader detail={detail.data} meta={meta} onMeta={(on) => update({ meta: on ? "1" : null })} />
+        <SessionHeader
+          detail={detail.data} meta={meta} onMeta={(on) => update({ meta: on ? "1" : null })}
+          noResult={toolCalls.data.filter((t) => t.tool_result_block_id === null).length} calls={toolCalls.data.length}
+          runsOpen={runsOpen?.open ?? null} onRunsOpen={(open) => setRunsOpen({ open })}
+        />
         <SubagentTree detail={detail.data} />
         <Stream
           messages={messages.data} toolCalls={toolCalls.data} observations={observations.data} childSessions={detail.data.children}
-          meta={meta} selection={sel} onSelect={select} onShowMeta={() => update({ meta: "1" })}
+          meta={meta} selection={sel} onSelect={select} onShowMeta={() => update({ meta: "1" })} runsOpen={runsOpen}
         />
       </div>
       {sel && <Drawer selection={sel} messages={messages.data} toolCalls={toolCalls.data} claims={detail.data.claims} onClose={() => select(null)} />}
