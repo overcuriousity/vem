@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.1 (2026-10-14)
+
+### Changed
+- GUI session view: consecutive tool calls of a turn render as one collapsible tool-run band
+  (call count, tool names by frequency, status summary; runs of more than 5 calls start collapsed),
+  one row per call, and distinct styling for user messages, assistant messages and tool calls
+  (#22, MIK-327).
+
+### Fixed
+- GUI session view on narrow screens (<760px): the record drawer keeps the selected row visible
+  above it, is capped at 50vh, takes focus on open and returns it on close (#25, MIK-332).
+
 ## v0.4.0 (2026-10-14)
 
 ### Added
