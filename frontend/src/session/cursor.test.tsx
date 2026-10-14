@@ -93,3 +93,39 @@ test("sessions_harness_options_match_model", async () => {
   const kinds = [...screen.getByRole("combobox", { name: "Kind" }).querySelectorAll("option")].map((o) => o.value);
   expect(kinds).toContain("local_history");
 });
+
+// A Cursor agent-transcript user line: the adapter keeps the text verbatim and unwraps it into `vem_user_query`.
+const WRAPPED = "<timestamp>Thursday, Oct 1, 2026, 9:30 AM (UTC+2)</timestamp>\n<user_query>\nlist the files\n</user_query>";
+const renderUser = (m: MessageRow) =>
+  renderWithProviders(<Stream messages={[m]} toolCalls={[]} observations={[]} childSessions={[]} meta={false} selection={null} onSelect={() => {}} onShowMeta={() => {}} />);
+
+test("user_query_wrapper_rendered_as_query_with_embedded_timestamp", () => {
+  renderUser(msg(1, "user", [block("text", { text: WRAPPED })], {
+    timestamp: null, ts_origin: "absent",
+    attributes: { vem_user_query: { text: "list the files", embedded_timestamp: "Thursday, Oct 1, 2026, 9:30 AM (UTC+2)", embedded_timestamp_utc: "2026-10-01T07:30:00.000Z" } },
+  }));
+  const card = document.getElementById("message-1")!;
+  expect(card.textContent).not.toMatch(/<user_query>|<timestamp>/);
+  expect(within(card).getByText("list the files")).toBeInTheDocument();
+  const ts = within(card).getByText("2026-10-01T07:30:00.000Z");
+  expect(ts).toHaveAttribute("title", expect.stringContaining("Thursday, Oct 1, 2026, 9:30 AM (UTC+2)"));
+  expect(within(card).getByText("embedded")).toBeInTheDocument();
+  // The record's own timestamp stays absent.
+  expect(within(card).getByText("absent")).toBeInTheDocument();
+});
+
+test("user_query_unparsed_embedded_timestamp_kept_as_text", () => {
+  renderUser(msg(1, "user", [block("text", { text: "<timestamp>later</timestamp><user_query>q</user_query>" })], {
+    attributes: { vem_user_query: { text: "q", embedded_timestamp: "later" } },
+  }));
+  const card = document.getElementById("message-1")!;
+  expect(within(card).getByText("later")).toBeInTheDocument();
+  expect(within(card).getByText("embedded")).toBeInTheDocument();
+});
+
+test("user_text_without_unwrapped_query_is_verbatim", () => {
+  renderUser(msg(1, "user", [block("text", { text: "<user_query>no close" })], { attributes: { vem_user_query: { text: 7 } } }));
+  const card = document.getElementById("message-1")!;
+  expect(card.textContent).toContain("<user_query>no close");
+  expect(within(card).queryByText("embedded")).not.toBeInTheDocument();
+});
