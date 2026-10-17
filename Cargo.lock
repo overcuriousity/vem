@@ -177,7 +177,7 @@ dependencies = [
  "arrow-schema",
  "arrow-select",
  "atoi",
- "base64 0.23.1",
+ "base64",
  "chrono",
  "half",
  "lexical-core",
@@ -415,12 +415,6 @@ dependencies = [
  "tower-service",
  "tracing",
 ]
-
-[[package]]
-name = "base64"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
@@ -1314,7 +1308,7 @@ dependencies = [
  "arrow-ipc",
  "arrow-schema",
  "arrow-select",
- "base64 0.23.1",
+ "base64",
  "brotli",
  "bytes",
  "chrono",
@@ -2082,7 +2076,7 @@ name = "vem-web"
 version = "0.4.1"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64",
  "http-body-util",
  "rust-embed",
  "serde",
